@@ -1,0 +1,33 @@
+Targets provides modern CMake build abstractions with Bazel-like ergonomics.
+
+To use Targets in your CMake project:
+
+    find_package(Targets CONFIG REQUIRED)
+    include(Targets)
+
+Then define your build targets:
+
+    cpp_library(
+        TARGET MyLib
+        SOURCES src/mylib.cpp
+        HEADERS include/mylib.h
+        INCLUDES
+            PUBLIC include/
+        DEPENDENCIES
+            PUBLIC fmt::fmt
+    )
+
+    cpp_binary(
+        TARGET MyApp
+        SOURCES src/main.cpp
+        DEPENDENCIES
+            PRIVATE MyLib
+    )
+
+Available functions:
+  - cpp_library()    : Define a C++ library
+  - cpp_binary()     : Define a C++ executable
+  - cpp_test()       : Define a C++ test (requires Google Test)
+  - flatbuffer_cpp_library() : Generate C++ from FlatBuffers schemas
+
+See https://github.com/yourusername/targets for full documentation.
