@@ -14,10 +14,12 @@ cpp_library(
     SOURCES
         src/calculator.cpp
     HEADERS
-        include/mathlib/calculator.h
+        mathlib/calculator.h
     INCLUDES
         PUBLIC
             include/
+    HEADER_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
     CXX_STANDARD 17
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
