@@ -216,8 +216,8 @@ function(flatbuffer_cpp_library)
     endif()
   endforeach()
 
-  # Create dummy source file path
-  set(dummy_file "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dummy.cpp")
+  # Create dummy source file path (dummy.cpp is in parent cmake/ directory)
+  set(dummy_file "${_TARGETS_ROOT_DIR}/dummy.cpp")
 
   # Create library target
   add_library(${args_TARGET} STATIC)
