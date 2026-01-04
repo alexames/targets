@@ -182,7 +182,10 @@ function(cpp_target)
   if(_is_interface_library)
     # Interface libraries use INTERFACE keyword for everything
     _targets_parse_access_specifier(INCLUDES ${args_INCLUDES})
-    target_include_directories(${args_TARGET} INTERFACE ${PUBLIC_INCLUDES})
+    target_include_directories(${args_TARGET} INTERFACE
+      ${PUBLIC_INCLUDES}
+      "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
+    )
 
     _targets_parse_access_specifier(DEFINITIONS ${args_DEFINITIONS})
     target_compile_definitions(${args_TARGET} INTERFACE ${PUBLIC_DEFINITIONS})
