@@ -36,13 +36,7 @@ jobs:
         uses: lukka/get-cmake@latest
 
       - name: Configure CMake
-        run: |
-          cmake -B build -S . \
-            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
-            -DTARGETS_BUILD_EXAMPLES=ON \
-            -DTARGETS_BUILD_TESTS=OFF \
-            -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DTARGETS_BUILD_EXAMPLES=ON -DTARGETS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 
       - name: Build Examples
         run: cmake --build build --config Release
