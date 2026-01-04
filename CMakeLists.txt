@@ -15,7 +15,9 @@ option(TARGETS_BUILD_TESTS "Build integration tests" ON)
 install(
     DIRECTORY cmake/
     DESTINATION share/targets/cmake
-    FILES_MATCHING PATTERN "*.cmake"
+    FILES_MATCHING
+        PATTERN "*.cmake"
+        PATTERN "*.cpp"
 )
 
 # Install package config
