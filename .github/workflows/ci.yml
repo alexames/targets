@@ -1,0 +1,77 @@
+name: CI - Build Examples
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-examples:
+    name: Build Examples on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            triplet: x64-linux
+          - os: windows-latest
+            triplet: x64-windows
+          - os: macos-latest
+            triplet: x64-osx
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '834977918592e4f5d5ec5fe48ba338c608faf9f9'
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+            -DTARGETS_BUILD_EXAMPLES=ON \
+            -DTARGETS_BUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Examples
+        run: cmake --build build --config Release
+
+      - name: Test executable_with_deps example (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          if [ -f build/examples/executable_with_deps/CalculatorApp ]; then
+            ./build/examples/executable_with_deps/CalculatorApp
+          else
+            echo "CalculatorApp executable not found"
+            exit 1
+          fi
+
+      - name: Test executable_with_deps example (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (Test-Path "build\examples\executable_with_deps\Release\CalculatorApp.exe") {
+            & "build\examples\executable_with_deps\Release\CalculatorApp.exe"
+          } else {
+            Write-Error "CalculatorApp.exe not found"
+            exit 1
+          }
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.os }}
+          path: |
+            build/**/*.log
+            build/CMakeFiles/**/*.log
