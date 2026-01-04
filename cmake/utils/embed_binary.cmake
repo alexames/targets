@@ -71,7 +71,7 @@ function(embed_binary)
 
   foreach(file_path ${args_FILES})
     # Make path absolute
-    cmake_path(IS_ABSOLUTE "${file_path}" is_absolute)
+    cmake_path(IS_ABSOLUTE file_path is_absolute)
     if(NOT is_absolute)
       set(file_path "${CMAKE_CURRENT_SOURCE_DIR}/${file_path}")
     endif()

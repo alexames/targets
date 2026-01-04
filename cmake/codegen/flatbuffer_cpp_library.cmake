@@ -80,8 +80,8 @@ function(flatbuffer_cpp_library)
 
   # Convert schema files to absolute paths
   unset(source_paths)
-  foreach(source ${args_SCHEMAS})
-    cmake_path(IS_ABSOLUTE "${source}" is_absolute)
+  foreach(source IN LISTS args_SCHEMAS)
+    cmake_path(IS_ABSOLUTE source is_absolute)
     if(is_absolute)
       list(APPEND source_paths "${source}")
     else()
