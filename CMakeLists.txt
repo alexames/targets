@@ -19,13 +19,12 @@ install(
 )
 
 # Install package config
-configure_file(
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/TargetsConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/TargetsConfig.cmake"
-    @ONLY
+    INSTALL_DESTINATION share/targets
 )
-
-include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/TargetsConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
