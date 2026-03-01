@@ -1,0 +1,12 @@
+name: Update vcpkg Registry
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  update-port:
+    uses: alexames/vcpkg-registry/.github/workflows/update-port.yml@main
+    secrets:
+      registry-token: ${{ secrets.VCPKG_REGISTRY_TOKEN }}
