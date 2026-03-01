@@ -41,6 +41,7 @@ function(cpp_target)
     SOURCE_DIR                # Source directory (default: CMAKE_CURRENT_LIST_DIR)
     HEADER_DIR                # Header directory (default: CMAKE_CURRENT_LIST_DIR/Include)
     WORKING_DIRECTORY         # Debugger working directory (executables only)
+    COMMAND_ARGUMENTS         # Debugger command arguments (executables only)
     CXX_STANDARD              # C++ standard (default: 23)
     VERSION                   # Semantic version (e.g., "1.2.3")
     SOVERSION                 # ABI version
@@ -271,6 +272,15 @@ function(cpp_target)
         ${args_TARGET}
         PROPERTIES
           VS_DEBUGGER_WORKING_DIRECTORY "${args_WORKING_DIRECTORY}"
+      )
+    endif()
+
+    # Set debugger command arguments for executables
+    if(args_TYPE STREQUAL "EXECUTABLE" AND args_COMMAND_ARGUMENTS)
+      set_target_properties(
+        ${args_TARGET}
+        PROPERTIES
+          VS_DEBUGGER_COMMAND_ARGUMENTS "${args_COMMAND_ARGUMENTS}"
       )
     endif()
 
