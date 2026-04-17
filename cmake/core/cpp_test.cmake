@@ -54,7 +54,7 @@ include(GoogleTest)
 function(cpp_test)
   # Parse arguments to extract TARGET name
   set(options)
-  set(one_value_args TARGET FOLDER)
+  set(one_value_args TARGET FOLDER WORKING_DIRECTORY)
   set(multi_value_args)
   cmake_parse_arguments(
     PARSE_ARGV 0
@@ -74,8 +74,16 @@ function(cpp_test)
     set_target_properties(${_test_args_TARGET} PROPERTIES FOLDER "Tests")
   endif()
 
-  # Discover tests if target was created
   if(_test_args_TARGET AND TARGET ${_test_args_TARGET})
-    gtest_discover_tests(${_test_args_TARGET})
+    # Link GTest main entry point — every test needs this.
+    target_link_libraries(${_test_args_TARGET} PRIVATE GTest::gtest_main)
+
+    # Discover tests with optional working directory
+    if(_test_args_WORKING_DIRECTORY)
+      gtest_discover_tests(${_test_args_TARGET}
+        WORKING_DIRECTORY "${_test_args_WORKING_DIRECTORY}")
+    else()
+      gtest_discover_tests(${_test_args_TARGET})
+    endif()
   endif()
 endfunction()
