@@ -11,6 +11,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 get_filename_component(_TARGETS_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/dependencies/import_dependencies.cmake")
+include("${_TARGETS_MODULE_DIR}/platform_parser.cmake")
 
 # Helper function to parse PUBLIC/PRIVATE access specifiers
 function(_targets_parse_access_specifier VAR_NAME)
@@ -94,6 +95,10 @@ function(cpp_target)
   if(NOT args_NAMESPACE_ROOT)
     set(args_NAMESPACE_ROOT "${PROJECT_SOURCE_DIR}/Source")
   endif()
+
+  # Filter platform-conditional entries out of list arguments.
+  _targets_parse_platforms(args_SOURCES ${args_SOURCES})
+  _targets_parse_platforms(args_HEADERS ${args_HEADERS})
 
   # Gather source files
   unset(sources)
@@ -183,15 +188,18 @@ function(cpp_target)
   if(_is_interface_library)
     # Interface libraries use INTERFACE keyword for everything
     _targets_parse_access_specifier(INCLUDES ${args_INCLUDES})
+    _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
     target_include_directories(${args_TARGET} INTERFACE
       ${PUBLIC_INCLUDES}
       "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
     )
 
     _targets_parse_access_specifier(DEFINITIONS ${args_DEFINITIONS})
+    _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
     target_compile_definitions(${args_TARGET} INTERFACE ${PUBLIC_DEFINITIONS})
 
     _targets_parse_access_specifier(DEPENDENCIES ${args_DEPENDENCIES})
+    _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
     import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")
     target_link_libraries(${args_TARGET} INTERFACE ${PUBLIC_DEPENDENCIES})
 
@@ -201,6 +209,8 @@ function(cpp_target)
 
     # Add include directories
     _targets_parse_access_specifier(INCLUDES ${args_INCLUDES})
+    _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
+    _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
     target_include_directories(
       ${args_TARGET}
       PUBLIC
@@ -222,6 +232,8 @@ function(cpp_target)
 
     # Add compiler definitions
     _targets_parse_access_specifier(DEFINITIONS ${args_DEFINITIONS})
+    _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
+    _targets_parse_platforms(PRIVATE_DEFINITIONS ${PRIVATE_DEFINITIONS})
     target_compile_definitions(
       ${args_TARGET}
       PUBLIC ${PUBLIC_DEFINITIONS}
@@ -241,6 +253,8 @@ function(cpp_target)
 
     # Add dependencies
     _targets_parse_access_specifier(DEPENDENCIES ${args_DEPENDENCIES})
+    _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
+    _targets_parse_platforms(PRIVATE_DEPENDENCIES ${PRIVATE_DEPENDENCIES})
     import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")
     import_dependencies(${args_TARGET} "${PRIVATE_DEPENDENCIES}")
     target_link_libraries(
