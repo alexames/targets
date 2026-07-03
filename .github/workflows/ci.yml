@@ -193,3 +193,32 @@ jobs:
       - name: Run consumer (Windows)
         if: runner.os == 'Windows'
         run: .\build-consume\Release\use_widget.exe
+
+  test-suite:
+    name: Run test suite on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      # Runs the project's full CTest suite (tests/unit + tests/integration) with
+      # TARGETS_BUILD_TESTS=ON. The top-level project is LANGUAGES NONE and the tests are
+      # self-contained script-mode (cmake -P) and configure-mode (cmake -S/-B) sub-projects
+      # that only include(Targets) and call the rules -- no external dependencies, so no
+      # vcpkg toolchain is needed. The scenarios that enable CXX are covered by each runner's
+      # default compiler (gcc/clang/MSVC). Examples are OFF here: they are built and run by
+      # the build-examples job. The build tree is shallow (repo-relative "build"), avoiding
+      # the deep-path MSVC FileTracker compiler-detection failures seen under long temp paths.
+      - name: Configure with tests enabled
+        run: cmake -B build -S . -DTARGETS_BUILD_TESTS=ON -DTARGETS_BUILD_EXAMPLES=OFF
+
+      - name: Run CTest suite
+        run: ctest --test-dir build --build-config Release --output-on-failure

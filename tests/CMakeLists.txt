@@ -200,9 +200,12 @@ add_test(
 # leak assertion effective -- with PASS_REGULAR_EXPRESSION set, CTest ignores the exit
 # code, so the FATAL_ERROR raised if the ignored PRIVATE dependency leaks onto the
 # INTERFACE target is only honored via this FAIL regex (FAIL takes precedence over PASS).
+# CMake word-wraps the warning across console lines, so match the key phrase with
+# whitespace-tolerant separators (as cpp_target_hygiene_interface_warns does) rather than a
+# fixed-space string that a line break could split.
 set_tests_properties(cpp_target_interface_ignored_warns PROPERTIES
-  PASS_REGULAR_EXPRESSION "only apply to a compiled target and were ignored"
-  FAIL_REGULAR_EXPRESSION "PRIVATE dependency must not be applied")
+  PASS_REGULAR_EXPRESSION "only[ \t\r\n]+apply[ \t\r\n]+to[ \t\r\n]+a[ \t\r\n]+compiled[ \t\r\n]+target[ \t\r\n]+and[ \t\r\n]+were[ \t\r\n]+ignored"
+  FAIL_REGULAR_EXPRESSION "PRIVATE[ \t\r\n]+dependency[ \t\r\n]+must[ \t\r\n]+not[ \t\r\n]+be[ \t\r\n]+applied")
 
 # Library linkage selection (regression tests for issue #14). STATIC and SHARED are
 # mutually exclusive; passing both used to silently build SHARED instead of erroring
