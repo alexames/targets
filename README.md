@@ -196,8 +196,10 @@ cpp_test(
 | `NAMESPACE_ROOT` | all | Root for namespace-alias derivation (default: `${PROJECT_SOURCE_DIR}/Source`). |
 
 > **Always prefix `INCLUDES` / `DEFINITIONS` / `DEPENDENCIES` values with `PUBLIC` or
-> `PRIVATE`.** Entries listed before the first visibility keyword are currently dropped
-> silently (tracked in [#4](https://github.com/alexames/targets/issues/4)).
+> `PRIVATE`.** The keyword is required: any entry placed before the first visibility
+> keyword is rejected with a configure-time error (it was previously dropped silently —
+> [#4](https://github.com/alexames/targets/issues/4)). Unknown or misspelled arguments are
+> likewise rejected instead of being ignored.
 
 ## Platform-conditional entries
 
