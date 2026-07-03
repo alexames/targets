@@ -68,6 +68,30 @@ jobs:
             exit 1
           }
 
+      # Runs the SHARED-library example (issue #21). On Windows this only launches if
+      # Greeter.dll was staged next to GreeterApp.exe (proving DLL staging) and the exe linked
+      # against a populated import library (proving EXPORT_HEADER exports symbols). On
+      # Ubuntu/macOS it links the shared object, found via the build-tree RPATH.
+      - name: Test shared_library example (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          if [ -f build/examples/shared_library/GreeterApp ]; then
+            ./build/examples/shared_library/GreeterApp
+          else
+            echo "GreeterApp executable not found"
+            exit 1
+          fi
+
+      - name: Test shared_library example (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (Test-Path "build\examples\shared_library\Release\GreeterApp.exe") {
+            & "build\examples\shared_library\Release\GreeterApp.exe"
+          } else {
+            Write-Error "GreeterApp.exe not found"
+            exit 1
+          }
+
       - name: Upload build artifacts
         if: failure()
         uses: actions/upload-artifact@v5

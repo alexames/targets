@@ -292,3 +292,50 @@ add_test(
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_install_export"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_install_export"
 )
+
+# SHARED-library export ergonomics (regression tests for issue #21). EXPORT_HEADER must wire
+# up GenerateExportHeader (visibility presets + the generated header's dir on the PUBLIC
+# include path); WINDOWS_EXPORT_ALL_SYMBOLS must set the matching target property; the two
+# strategies together, or either on an executable, must FATAL_ERROR. Each positive scenario
+# asserts target properties and halts before generation with a sentinel; the negative
+# scenarios pass iff the diagnostic is emitted. CXX is enabled (GenerateExportHeader probes
+# the compiler), so these run where a C++ toolchain is available.
+add_test(
+  NAME cpp_library_export_header
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=export_header
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_export_header"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_export_header_header"
+)
+set_tests_properties(cpp_library_export_header PROPERTIES
+  PASS_REGULAR_EXPRESSION "EXPORT_HEADER_OK")
+
+add_test(
+  NAME cpp_library_export_all_symbols
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=export_all_symbols
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_export_header"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_export_header_all"
+)
+set_tests_properties(cpp_library_export_all_symbols PROPERTIES
+  PASS_REGULAR_EXPRESSION "EXPORT_ALL_OK")
+
+add_test(
+  NAME cpp_library_export_conflict
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=conflict
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_export_header"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_export_header_conflict"
+)
+set_tests_properties(cpp_library_export_conflict PROPERTIES
+  PASS_REGULAR_EXPRESSION "mutually[ \t\r\n]+exclusive")
+
+add_test(
+  NAME cpp_library_export_on_executable
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=on_executable
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_export_header"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_export_header_on_exe"
+)
+set_tests_properties(cpp_library_export_on_executable PROPERTIES
+  PASS_REGULAR_EXPRESSION "apply only to[ \t\r\n]+libraries")

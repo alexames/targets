@@ -15,6 +15,16 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 option(TARGETS_MSVC_EDIT_AND_CONTINUE
   "Inject MSVC /ZI (edit-and-continue debug info) into Debug builds on x86/x64" ON)
 
+# Whether cpp_target copies the runtime DLLs of an executable's shared-library dependencies
+# next to the executable after it is built. On Windows a produced DLL must sit beside the
+# consuming .exe (or be on PATH) or the process cannot start, which makes running/debugging a
+# SHARED-linked executable from the build tree fail out of the box (see issue #21). This uses
+# $<TARGET_RUNTIME_DLLS> (CMake >= 3.21) and is a no-op on platforms without DLLs (Linux/macOS
+# rely on RPATH instead) and when an executable has no shared dependencies. Set this to OFF to
+# suppress the staging step entirely.
+option(TARGETS_STAGE_RUNTIME_DLLS
+  "Copy dependency runtime DLLs next to each executable after build (Windows)" ON)
+
 # Include dependency management
 get_filename_component(_TARGETS_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
@@ -129,7 +139,9 @@ function(cpp_target)
     STATIC
     SHARED
     UNITY_BUILD
-    INSTALL)                  # Generate install + export rules (issue #20)
+    INSTALL                   # Generate install + export rules (issue #20)
+    EXPORT_HEADER             # Generate a GenerateExportHeader export header (issue #21)
+    WINDOWS_EXPORT_ALL_SYMBOLS)  # Auto-export all symbols of a SHARED library (issue #21)
   set(one_value_args
     TYPE                      # LIBRARY or EXECUTABLE (required)
     TARGET                    # Target name (required)
@@ -173,6 +185,17 @@ function(cpp_target)
   endif()
   if(NOT args_TARGET)
     message(FATAL_ERROR "cpp_target: TARGET argument is required")
+  endif()
+
+  # EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS are two mutually exclusive strategies for
+  # exporting a SHARED library's symbols: the former annotates the public API with generated
+  # __declspec/visibility macros, the latter auto-exports every symbol. Combining them is
+  # contradictory (and on MSVC provokes duplicate-export warnings), so reject it up front
+  # (see issue #21).
+  if(args_EXPORT_HEADER AND args_WINDOWS_EXPORT_ALL_SYMBOLS)
+    message(FATAL_ERROR
+      "cpp_target: EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS are mutually exclusive "
+      "symbol-export strategies; choose one.")
   endif()
 
   # Decide whether install/export rules are requested. EXPORT implies INSTALL: naming an
@@ -309,6 +332,13 @@ function(cpp_target)
     if(args_STATIC OR args_SHARED)
       message(FATAL_ERROR "cpp_target: Executables cannot be marked STATIC or SHARED")
     endif()
+    # Symbol-export controls describe a library's ABI; an executable exports nothing, so
+    # reject them rather than silently ignoring a misplaced flag (see issue #21).
+    if(args_EXPORT_HEADER OR args_WINDOWS_EXPORT_ALL_SYMBOLS)
+      message(FATAL_ERROR
+        "cpp_target: EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS apply only to libraries, "
+        "not executables.")
+    endif()
     # An executable with no sources still needs a translation unit to configure; give it
     # the same placeholder fallback as source-less libraries (see issue #7).
     if(NOT sources)
@@ -416,6 +446,12 @@ function(cpp_target)
     if(args_UNITY_BUILD)
       list(APPEND ignored_args "UNITY_BUILD")
     endif()
+    if(args_EXPORT_HEADER)
+      list(APPEND ignored_args "EXPORT_HEADER")
+    endif()
+    if(args_WINDOWS_EXPORT_ALL_SYMBOLS)
+      list(APPEND ignored_args "WINDOWS_EXPORT_ALL_SYMBOLS")
+    endif()
     if(ignored_args)
       string(REPLACE ";" ", " ignored_args "${ignored_args}")
       message(WARNING
@@ -431,6 +467,41 @@ function(cpp_target)
     _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
     _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
     _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
+
+    # Generate an export header for a SHARED library so its public symbols are actually
+    # exported (see issue #21). On Windows/MSVC a SHARED library with no __declspec(dllexport)
+    # produces an empty import library and consumers fail to link; GenerateExportHeader writes
+    # a <target>_export.h defining a <TARGET>_EXPORT macro that expands to the right
+    # dllexport/dllimport (and, on GCC/Clang, visibility) attribute for the current build.
+    # CXX_VISIBILITY_PRESET hidden + VISIBILITY_INLINES_HIDDEN give non-Windows toolchains the
+    # same "nothing exported unless annotated" behavior MSVC has by default, so the macro is
+    # meaningful everywhere. The generated header's directory is added to the target's PUBLIC
+    # includes; when the target is also installed/exported it flows through the same
+    # BUILD/INSTALL_INTERFACE wrapping and header install as the hand-written headers below, so
+    # downstream consumers still find <target>_export.h.
+    if(args_EXPORT_HEADER AND args_TYPE STREQUAL "LIBRARY")
+      include(GenerateExportHeader)
+      set(_export_header_dir "${CMAKE_CURRENT_BINARY_DIR}/${args_TARGET}.export")
+      # Create the directory now so it exists at configure time: the install(DIRECTORY ...)
+      # rule for exported headers skips directories that are not present when it is generated.
+      file(MAKE_DIRECTORY "${_export_header_dir}")
+      string(TOLOWER "${args_TARGET}" _export_header_base)
+      generate_export_header(${args_TARGET}
+        EXPORT_FILE_NAME "${_export_header_dir}/${_export_header_base}_export.h")
+      set_target_properties(${args_TARGET} PROPERTIES
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+      list(APPEND PUBLIC_INCLUDES "${_export_header_dir}")
+    endif()
+
+    # Auto-export every symbol of a SHARED library on Windows as an alternative to annotating
+    # the public API with export macros (see issue #21). CMake fills the module-definition
+    # table from the object files' symbols; it is a no-op for STATIC libraries and on
+    # non-Windows toolchains.
+    if(args_WINDOWS_EXPORT_ALL_SYMBOLS AND args_TYPE STREQUAL "LIBRARY")
+      set_target_properties(${args_TARGET} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    endif()
+
     # When the target is exported its public include dirs must be wrapped in BUILD/INSTALL
     # interface generator expressions (a plain source path breaks install(EXPORT)); the
     # wrapped directories are also the header-install sources. Otherwise the include dirs
@@ -539,6 +610,28 @@ function(cpp_target)
         PROPERTIES
           VS_DEBUGGER_COMMAND_ARGUMENTS "${args_COMMAND_ARGUMENTS}"
       )
+    endif()
+
+    # Stage runtime DLLs next to the executable so it launches from the build tree (see issue
+    # #21). On Windows the DLL of a SHARED dependency must sit beside the .exe (or be on PATH),
+    # or the process cannot start. $<TARGET_RUNTIME_DLLS> resolves the transitive set of
+    # dependency DLLs for us; the copy runs after every build so newly rebuilt DLLs are
+    # refreshed. It requires CMake >= 3.21 (this project's floor is 3.20), so it is version
+    # guarded and simply omitted on older CMake. The command name is chosen at generate time:
+    # with no runtime DLLs (e.g. only STATIC deps, or a non-DLL platform where the list is
+    # always empty) it degrades to `cmake -E true`, avoiding a `copy_if_different` invoked with
+    # no source files -- which is an error, not a no-op. COMMAND_EXPAND_LISTS splits the
+    # semicolon-separated DLL list into individual arguments.
+    if(args_TYPE STREQUAL "EXECUTABLE"
+       AND TARGETS_STAGE_RUNTIME_DLLS
+       AND NOT CMAKE_VERSION VERSION_LESS "3.21")
+      add_custom_command(TARGET ${args_TARGET} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E
+          "$<IF:$<BOOL:$<TARGET_RUNTIME_DLLS:${args_TARGET}>>,copy_if_different,true>"
+          "$<TARGET_RUNTIME_DLLS:${args_TARGET}>"
+          "$<TARGET_FILE_DIR:${args_TARGET}>"
+        COMMAND_EXPAND_LISTS
+        VERBATIM)
     endif()
 
     # Configure precompiled headers
