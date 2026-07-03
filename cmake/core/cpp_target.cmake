@@ -515,8 +515,10 @@ function(cpp_target)
   # libraries, and INTERFACE (header-only) libraries (CMake >= 3.19) -- so it is applied
   # here for all of them rather than only compiled targets, which used to silently drop it
   # for header-only libraries (see issue #13). When the caller does not pass an explicit
-  # FOLDER, derive it from the enclosing project (see issue #8).
-  if(args_FOLDER)
+  # FOLDER, derive it from the enclosing project (see issue #8). Presence is tested with
+  # DEFINED rather than truthiness so an explicit but falsey-looking folder name (e.g. "0"
+  # or "OFF") is honored instead of falling through to the derived default (see issue #15).
+  if(DEFINED args_FOLDER)
     set_target_properties(${args_TARGET} PROPERTIES FOLDER "${args_FOLDER}")
   elseif(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
     set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}/${relative_path_from_root}")
