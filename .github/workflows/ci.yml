@@ -69,3 +69,47 @@ jobs:
           path: |
             build/**/*.log
             build/CMakeFiles/**/*.log
+
+  consume-port:
+    name: Consume in-repo vcpkg port on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            triplet: x64-linux
+          - os: windows-latest
+            triplet: x64-windows
+          - os: macos-latest
+            triplet: x64-osx
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '834977918592e4f5d5ec5fe48ba338c608faf9f9'
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      # Installs the in-repo ports/targets overlay port end-to-end and configures a real
+      # consumer that calls find_package(Targets CONFIG REQUIRED). This fails if the port
+      # ever regresses to installing a layout that find_package cannot resolve (issue #2).
+      - name: Configure consumer against the overlay port
+        run: cmake -B build-consume -S tests/consume_port -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_OVERLAY_PORTS="${{ github.workspace }}/ports" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build consumer
+        run: cmake --build build-consume --config Release
+
+      - name: Run consumer (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: ./build-consume/greet
+
+      - name: Run consumer (Windows)
+        if: runner.os == 'Windows'
+        run: .\build-consume\Release\greet.exe

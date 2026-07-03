@@ -1,0 +1,8 @@
+{
+  "name": "consume-targets-port",
+  "version": "0.0.0",
+  "description": "End-to-end consumer that installs the in-repo Targets overlay port and calls find_package(Targets CONFIG REQUIRED).",
+  "dependencies": [
+    "targets"
+  ]
+}
