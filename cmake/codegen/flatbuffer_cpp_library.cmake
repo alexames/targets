@@ -296,25 +296,39 @@ function(flatbuffer_cpp_library)
     set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}")
   endif()
 
-  # Organize files in IDE
-  source_group(
-    TREE "${generated_header_dir}"
-    PREFIX "Generated Headers"
-    FILES ${all_generated_header_files}
-  )
+  # Organize files in IDE. source_group(TREE ...) hard-errors on any file outside its root,
+  # so each file list is partitioned and only the in-root files get a TREE grouping; out-of-
+  # root files (generated headers/binary schemas written to the build tree, or `..`-relative
+  # schemas) fall back to a flat group. This mirrors protobuf_cpp_library() (see issue #6).
+  _targets_partition_files_by_root(
+    "${generated_header_dir}" in_tree_headers out_of_tree_headers
+    ${all_generated_header_files})
+  if(in_tree_headers)
+    source_group(TREE "${generated_header_dir}" PREFIX "Generated Headers" FILES ${in_tree_headers})
+  endif()
+  if(out_of_tree_headers)
+    source_group("Generated Headers" FILES ${out_of_tree_headers})
+  endif()
 
-  source_group(
-    TREE "${args_SCHEMA_ROOT_DIR}"
-    PREFIX "Schemas"
-    FILES ${source_paths}
-  )
+  _targets_partition_files_by_root(
+    "${args_SCHEMA_ROOT_DIR}" in_tree_schemas out_of_tree_schemas ${source_paths})
+  if(in_tree_schemas)
+    source_group(TREE "${args_SCHEMA_ROOT_DIR}" PREFIX "Schemas" FILES ${in_tree_schemas})
+  endif()
+  if(out_of_tree_schemas)
+    source_group("Schemas" FILES ${out_of_tree_schemas})
+  endif()
 
   if(all_generated_binary_files)
-    source_group(
-      TREE "${args_BINARY_SCHEMAS_DIR}"
-      PREFIX "Binary Schemas"
-      FILES ${all_generated_binary_files}
-    )
+    _targets_partition_files_by_root(
+      "${args_BINARY_SCHEMAS_DIR}" in_tree_binaries out_of_tree_binaries
+      ${all_generated_binary_files})
+    if(in_tree_binaries)
+      source_group(TREE "${args_BINARY_SCHEMAS_DIR}" PREFIX "Binary Schemas" FILES ${in_tree_binaries})
+    endif()
+    if(out_of_tree_binaries)
+      source_group("Binary Schemas" FILES ${out_of_tree_binaries})
+    endif()
   endif()
 
   source_group("CMake Rules" FILES "${dummy_file}")

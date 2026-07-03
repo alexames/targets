@@ -514,6 +514,22 @@ add_test(
 set_tests_properties(grpc_cpp_library_wiring PROPERTIES
   PASS_REGULAR_EXPRESSION "GRPC_WIRING_OK")
 
+# flatbuffer_cpp_library source grouping robustness (regression test for issue #59). Like
+# cpp_target (issue #6), the rule fed generated headers, schema sources, and binary schemas
+# straight to source_group(TREE ...), which SEND_ERRORs on any file outside its root -- so a
+# schema resolving out of SCHEMA_ROOT_DIR (out-of-source build tree or a `..`-relative schema)
+# failed configuration. flatc is faked with CMAKE_COMMAND (CI has no FlatBuffers toolchain), the
+# schema is written into the build tree so all three source groups see out-of-root files, and a
+# clean configure (exit 0) proves those files are grouped flat instead of aborting. No
+# PASS_REGULAR_EXPRESSION: the underlying error is a non-fatal SEND_ERROR, so only the exit code
+# is trustworthy (mirroring cpp_target_source_group_out_of_root above).
+add_test(
+  NAME flatbuffer_cpp_library_source_group_out_of_root
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/flatbuffer_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/flatbuffer_cpp_library_source_group_out_of_root"
+)
+
 # Per-target COPTS / LINKOPTS and the DATA attribute (issue #27). COPTS/LINKOPTS carry
 # PUBLIC/PRIVATE visibility and the same platform buckets as DEFINITIONS and must land in
 # COMPILE_OPTIONS/LINK_OPTIONS (PUBLIC also in the INTERFACE_* variants) with platform
