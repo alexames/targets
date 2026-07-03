@@ -92,6 +92,31 @@ jobs:
             exit 1
           }
 
+      # Runs the DATA-staging example (issue #27). DataApp opens a data file by relative name,
+      # so it only succeeds if the DATA attribute copied message.txt into the executable's own
+      # directory; the exe is run FROM that directory to prove the file landed next to it.
+      - name: Test data_files example (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          if [ -f build/examples/data_files/DataApp ]; then
+            (cd build/examples/data_files && ./DataApp)
+          else
+            echo "DataApp executable not found"
+            exit 1
+          fi
+
+      - name: Test data_files example (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (Test-Path "build\examples\data_files\Release\DataApp.exe") {
+            Push-Location build\examples\data_files\Release
+            & .\DataApp.exe
+            Pop-Location
+          } else {
+            Write-Error "DataApp.exe not found"
+            exit 1
+          }
+
       - name: Upload build artifacts
         if: failure()
         uses: actions/upload-artifact@v5

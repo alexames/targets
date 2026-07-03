@@ -17,6 +17,9 @@ cpp_library(
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
     [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
     [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
+    [COPTS <PUBLIC|PRIVATE> <option>...]
+    [LINKOPTS <PUBLIC|PRIVATE> <option>...]
+    [DATA <file-or-dir>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
     [PROPERTIES <prop> <value>...]
@@ -63,6 +66,17 @@ cpp_library(
   PRIVATE
   - PUBLIC: Dependencies exported to consumers
   - PRIVATE: Dependencies only for building this target
+- **COPTS**: Raw compile options (translated to `target_compile_options`). Every value must
+  be prefixed with PUBLIC or PRIVATE, and the same platform buckets as `DEFINITIONS` apply.
+  PUBLIC options propagate to consumers (`INTERFACE_COMPILE_OPTIONS`); PRIVATE options apply
+  only to this target's build. Ignored with a warning on a header-only INTERFACE library.
+- **LINKOPTS**: Raw link options (translated to `target_link_options`). Same PUBLIC/PRIVATE
+  and platform-bucket rules as `COPTS`. Ignored with a warning on a header-only INTERFACE
+  library.
+- **DATA**: Runtime data files/directories (Bazel's `data`). After each build they are copied
+  next to the built artifact (`$<TARGET_FILE_DIR>`) via a POST_BUILD step, so the program
+  finds them by a relative path when launched from the build tree. Honors the same platform
+  buckets as the other lists. Ignored with a warning on a header-only INTERFACE library.
 - **CXX_STANDARD**: C++ standard version (11, 14, 17, 20, 23, etc.). Default: 23
 - **FOLDER**: IDE folder path for organization (e.g., "MyProject/Core")
 - **PROPERTIES**: Additional CMake target properties as key-value pairs
@@ -133,10 +147,11 @@ arguments applies:
   usage-requirements), `CXX_STANDARD` (as an interface feature requirement), `FOLDER`, and
   `PROPERTIES`.
 - **Ignored with a warning:** the **PRIVATE** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`,
-  `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`, `EXPORT_HEADER`,
-  `WINDOWS_EXPORT_ALL_SYMBOLS`, and the toolchain-hygiene knobs `WARNINGS`, `WERROR`,
-  `SANITIZERS`, and `LTO`. These only apply to a compiled target; supplying them emits a
-  configure-time warning naming each ignored argument rather than dropping them silently.
+  `COPTS`, `LINKOPTS`, `DATA`, `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`,
+  `EXPORT_HEADER`, `WINDOWS_EXPORT_ALL_SYMBOLS`, and the toolchain-hygiene knobs `WARNINGS`,
+  `WERROR`, `SANITIZERS`, and `LTO`. These only apply to a compiled target (or, for `DATA`, a
+  built artifact); supplying them emits a configure-time warning naming each ignored argument
+  rather than dropping them silently.
 
 **SHARED libraries on Windows:**
 
@@ -236,10 +251,14 @@ cpp_binary(
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
     [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
     [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
+    [COPTS <PUBLIC|PRIVATE> <option>...]
+    [LINKOPTS <PUBLIC|PRIVATE> <option>...]
+    [DATA <file-or-dir>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
     [PROPERTIES <prop> <value>...]
     [WORKING_DIRECTORY <dir>]
+    [COMMAND_ARGUMENTS <args>]
     [PRECOMPILE_HEADERS <header>...]
     [UNITY_BUILD <ON|OFF>]
     [UNITY_BUILD_BATCH_SIZE <number>]
@@ -251,6 +270,11 @@ cpp_binary(
 **Additional Parameters:**
 
 - **WORKING_DIRECTORY**: Sets the debugger working directory (Visual Studio, etc.)
+- **COMMAND_ARGUMENTS**: Sets the Visual Studio debugger's command-line (F5) arguments. This
+  affects only the debugger, not `ctest`; for arguments passed to a test at run time use
+  `cpp_test`'s `ARGS`.
+- **COPTS** / **LINKOPTS** / **DATA**: See `cpp_library()` above — raw compile/link options and
+  runtime data files. `DATA` is staged next to the executable after each build.
 - **INSTALL** / **EXPORT**: Install (and optionally export) the executable. See the
   **Installing & exporting libraries** subsection under `cpp_library()`.
 
@@ -285,16 +309,41 @@ cpp_test(
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
     [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
     [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
+    [COPTS <PUBLIC|PRIVATE> <option>...]
+    [LINKOPTS <PUBLIC|PRIVATE> <option>...]
+    [DATA <file-or-dir>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
     [PROPERTIES <prop> <value>...]
     [WORKING_DIRECTORY <dir>]
+    [SIZE <small|medium|large|enormous>]
+    [TIMEOUT <seconds>]
+    [LABELS <label>...]
+    [ARGS <arg>...]
 )
 ```
 
-Same parameters as `cpp_binary()`. Automatically links Google Test and registers tests with CTest.
+Accepts the full `cpp_binary()` grammar (including `DATA`, `COPTS`, `LINKOPTS`), plus the
+test-specific attributes below. Automatically links Google Test and registers tests with CTest
+via `gtest_discover_tests`.
 
 Enable testing at your **top-level** `CMakeLists.txt` with `enable_testing()` or, idiomatically, `include(CTest)`. `cpp_test()` does not call `enable_testing()` itself, because that command is directory-scoped and calling it from within the module (in whatever directory first includes Targets) can silently drop tests from `ctest`. `cpp_test()` honors the standard `BUILD_TESTING` option: when it is `OFF`, `cpp_test()` is a no-op — no target is created and Google Test is not acquired.
+
+**Test attributes** (applied to every discovered test):
+
+- **SIZE**: Bazel-style test size — `small` (60 s), `medium` (300 s), `large` (900 s), or
+  `enormous` (3600 s) — mapped to a default CTest `TIMEOUT`. An unknown size is a
+  configure-time error.
+- **TIMEOUT**: CTest per-test timeout in seconds. Overrides the `SIZE`-derived default. Must be
+  a non-negative integer.
+- **LABELS**: One or more CTest labels set on every discovered test (run a subset with
+  `ctest -L <label>`). All labels are preserved, not just the first.
+- **ARGS**: Arguments passed to the test executable when CTest **runs** it (via
+  `gtest_discover_tests`' `EXTRA_ARGS`). Distinct from `COMMAND_ARGUMENTS` (the VS debugger's
+  F5 arguments), which does not affect `ctest`.
+- **DATA**: The files a test opens at run time; staged next to the test binary. Unless
+  `WORKING_DIRECTORY` is given explicitly, the discovered tests run from the binary's directory
+  so `DATA` is found via a relative path.
 
 **Example:**
 
@@ -307,9 +356,15 @@ cpp_test(
     DEPENDENCIES
         PRIVATE
             MyMathLib
-            GTest::gtest_main
+    DATA test/fixtures/
+    SIZE medium
+    LABELS unit math
+    ARGS --gtest_shuffle
 )
 ```
+
+The GTest entry point (`GTest::gtest_main`) is linked automatically; you do not add it to
+`DEPENDENCIES`.
 
 ---
 

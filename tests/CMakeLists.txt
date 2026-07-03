@@ -513,3 +513,138 @@ add_test(
 )
 set_tests_properties(grpc_cpp_library_wiring PROPERTIES
   PASS_REGULAR_EXPRESSION "GRPC_WIRING_OK")
+
+# Per-target COPTS / LINKOPTS and the DATA attribute (issue #27). COPTS/LINKOPTS carry
+# PUBLIC/PRIVATE visibility and the same platform buckets as DEFINITIONS and must land in
+# COMPILE_OPTIONS/LINK_OPTIONS (PUBLIC also in the INTERFACE_* variants) with platform
+# filtering; DATA must configure its POST_BUILD staging cleanly for a file and a directory and
+# be reported as ignored on a header-only INTERFACE library. Each positive scenario asserts the
+# result and halts before generation with a sentinel matched by PASS_REGULAR_EXPRESSION; the
+# runtime DATA staging is proven end-to-end by the examples/data_files example in CI.
+add_test(
+  NAME cpp_target_copts
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=copts
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_options"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_options_copts"
+)
+set_tests_properties(cpp_target_copts PROPERTIES
+  PASS_REGULAR_EXPRESSION "COPTS_OK")
+
+add_test(
+  NAME cpp_target_linkopts
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=linkopts
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_options"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_options_linkopts"
+)
+set_tests_properties(cpp_target_linkopts PROPERTIES
+  PASS_REGULAR_EXPRESSION "LINKOPTS_OK")
+
+add_test(
+  NAME cpp_target_data_stage
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=data_stage
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_options"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_options_data_stage"
+)
+set_tests_properties(cpp_target_data_stage PROPERTIES
+  PASS_REGULAR_EXPRESSION "DATA_STAGE_OK")
+
+add_test(
+  NAME cpp_target_options_interface_warns
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=interface_warns
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_options"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_options_interface_warns"
+)
+# CMake word-wraps the warning across console lines, so match the key phrase with whitespace-
+# tolerant separators (as the hygiene/interface tests above do).
+set_tests_properties(cpp_target_options_interface_warns PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled[ \t\r\n]+target[ \t\r\n]+and[ \t\r\n]+were[ \t\r\n]+ignored")
+
+# cpp_test() Bazel-parity test attributes: SIZE / TIMEOUT / LABELS / ARGS / DATA (issue #27).
+# These are applied to the CTest tests gtest_discover_tests registers; since discovery is a
+# build-time step, the scenarios stub gtest_discover_tests to capture the exact arguments
+# cpp_test passes it and assert the wiring (TIMEOUT from TIMEOUT/SIZE, LABELS, EXTRA_ARGS from
+# ARGS, and the DATA-driven working directory). Each positive scenario halts with a sentinel
+# matched by PASS_REGULAR_EXPRESSION; bad_size passes iff the invalid-size diagnostic fires.
+add_test(
+  NAME cpp_test_timeout
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=timeout
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_timeout"
+)
+set_tests_properties(cpp_test_timeout PROPERTIES
+  PASS_REGULAR_EXPRESSION "TIMEOUT_OK")
+
+add_test(
+  NAME cpp_test_size
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=size
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_size"
+)
+set_tests_properties(cpp_test_size PROPERTIES
+  PASS_REGULAR_EXPRESSION "SIZE_OK")
+
+add_test(
+  NAME cpp_test_size_override
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=size_override
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_size_override"
+)
+set_tests_properties(cpp_test_size_override PROPERTIES
+  PASS_REGULAR_EXPRESSION "SIZE_OVERRIDE_OK")
+
+add_test(
+  NAME cpp_test_labels
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=labels
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_labels"
+)
+set_tests_properties(cpp_test_labels PROPERTIES
+  PASS_REGULAR_EXPRESSION "LABELS_OK")
+
+add_test(
+  NAME cpp_test_args
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=args
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_args"
+)
+set_tests_properties(cpp_test_args PROPERTIES
+  PASS_REGULAR_EXPRESSION "ARGS_OK")
+
+add_test(
+  NAME cpp_test_data_workdir
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=data_workdir
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_data_workdir"
+)
+set_tests_properties(cpp_test_data_workdir PROPERTIES
+  PASS_REGULAR_EXPRESSION "DATA_WORKDIR_OK")
+
+add_test(
+  NAME cpp_test_arg_order
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=arg_order
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_arg_order"
+)
+set_tests_properties(cpp_test_arg_order PROPERTIES
+  PASS_REGULAR_EXPRESSION "ARG_ORDER_OK")
+
+add_test(
+  NAME cpp_test_bad_size
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=bad_size
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_bad_size"
+)
+set_tests_properties(cpp_test_bad_size PROPERTIES
+  PASS_REGULAR_EXPRESSION "is not a valid size")

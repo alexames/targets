@@ -7,6 +7,7 @@ add_subdirectory(executable_with_deps)
 add_subdirectory(embed_binary)
 add_subdirectory(install_export)
 add_subdirectory(shared_library)
+add_subdirectory(data_files)
 add_subdirectory(toolchain_hygiene)
 
 # Add FlatBuffers example if FlatBuffers is available
