@@ -23,6 +23,8 @@ cpp_library(
     [PRECOMPILE_HEADERS <header>...]
     [UNITY_BUILD <ON|OFF>]
     [UNITY_BUILD_BATCH_SIZE <number>]
+    [INSTALL]
+    [EXPORT <export-set>]
 )
 ```
 
@@ -53,6 +55,11 @@ cpp_library(
 - **PRECOMPILE_HEADERS**: Headers to precompile for faster builds
 - **UNITY_BUILD**: Enable unity/jumbo builds (ON/OFF)
 - **UNITY_BUILD_BATCH_SIZE**: Number of files per unity chunk (default: 16)
+- **INSTALL**: Flag — opt the target into install/export rules so it is
+  `find_package`-able downstream. See the **Installing & exporting libraries** subsection
+  below.
+- **EXPORT**: Name of the export set to add the target to (implies `INSTALL`). Defaults to
+  `<Project>Targets` when `INSTALL` is given without `EXPORT`.
 
 **Example:**
 
@@ -102,6 +109,54 @@ arguments applies:
   compiled target; supplying them emits a configure-time warning naming each ignored
   argument rather than dropping them silently.
 
+**Installing & exporting libraries:**
+
+By default a `cpp_library` target is build-tree-only: its public include directories are
+plain source paths and no install rules are generated, so a downstream project cannot
+consume it via `find_package`. Passing **`INSTALL`** (optionally with **`EXPORT <set>`**)
+opts the target into a standard, relocatable install + export:
+
+```cmake
+project(MyProject VERSION 1.2.0)
+
+cpp_library(
+    TARGET MyLib
+    SOURCES src/mylib.cpp
+    HEADERS mylib/mylib.h
+    HEADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
+    INCLUDES PUBLIC include/
+    VERSION ${PROJECT_VERSION}
+    INSTALL
+    EXPORT MyProjectTargets
+)
+```
+
+This generates ordinary CMake install/export rules:
+
+- Each **PUBLIC** include directory is wrapped in `$<BUILD_INTERFACE:...>` and given a
+  matching `$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>`, so the target is export-safe.
+- `install(TARGETS MyLib EXPORT MyProjectTargets ...)` installs the artifact into the
+  standard `GNUInstallDirs` locations.
+- The public headers (the contents of the PUBLIC include directories and `HEADER_DIR`) are
+  installed under `${CMAKE_INSTALL_INCLUDEDIR}`.
+- A relocatable `<Project>Config.cmake`, a `<Project>ConfigVersion.cmake` (when the project
+  declares a `VERSION`), and the exported targets file are generated **once per export
+  set** and installed under `${CMAKE_INSTALL_LIBDIR}/cmake/<Project>`.
+
+Downstream, after `cmake --install`, a consumer needs no knowledge of Targets:
+
+```cmake
+find_package(MyProject 1.2.0 CONFIG REQUIRED)
+target_link_libraries(app PRIVATE MyProject::MyLib)
+```
+
+The exported target name (`MyProject::MyLib`) is the **same** namespaced alias the target
+has in the build tree, so references work identically whether the library is vendored or
+consumed via `find_package`. Multiple libraries can share one `EXPORT` set; the package
+config is generated the first time the set is seen and picks up every member. `cpp_binary`
+also accepts `INSTALL` (installing the executable to the runtime dir); pass `EXPORT` to add
+it to an export set as well.
+
 ---
 
 ### `cpp_binary()`
@@ -123,12 +178,16 @@ cpp_binary(
     [PRECOMPILE_HEADERS <header>...]
     [UNITY_BUILD <ON|OFF>]
     [UNITY_BUILD_BATCH_SIZE <number>]
+    [INSTALL]
+    [EXPORT <export-set>]
 )
 ```
 
 **Additional Parameters:**
 
 - **WORKING_DIRECTORY**: Sets the debugger working directory (Visual Studio, etc.)
+- **INSTALL** / **EXPORT**: Install (and optionally export) the executable. See the
+  **Installing & exporting libraries** subsection under `cpp_library()`.
 
 **Example:**
 

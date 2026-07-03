@@ -23,6 +23,7 @@ list(APPEND CMAKE_MODULE_PATH "${TARGETS_CMAKE_DIR}")
 include("${TARGETS_CMAKE_DIR}/TargetsVersion.cmake")
 
 # Include core modules
+include("${TARGETS_CMAKE_DIR}/core/install_export.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_target.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_library.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_binary.cmake")

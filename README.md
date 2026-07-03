@@ -41,6 +41,7 @@ cpp_binary(
   - [`cpp_binary`](#cpp_binary)
   - [`cpp_test`](#cpp_test)
   - [Common arguments](#common-arguments)
+- [Installing & exporting libraries](#installing--exporting-libraries)
 - [Platform-conditional entries](#platform-conditional-entries)
 - [Dependency management & namespaces](#dependency-management--namespaces)
 - [Code generation](#code-generation)
@@ -207,6 +208,8 @@ no-op — it creates no target and never acquires Google Test.
 | `UNITY_BUILD_BATCH_SIZE` | all | Files per unity chunk (default 16). |
 | `STATIC` / `SHARED` | `cpp_library` | **Flags** — library linkage (default STATIC); mutually exclusive, passing both errors. |
 | `VERSION` / `SOVERSION` | `cpp_library` | Library version / ABI version. |
+| `INSTALL` | `cpp_library`, `cpp_binary` | **Flag** — generate install/export rules (see [Installing & exporting](#installing--exporting-libraries)). |
+| `EXPORT` | `cpp_library`, `cpp_binary` | Export-set name for the installed target (implies `INSTALL`; default `<Project>Targets`). |
 | `WORKING_DIRECTORY` | `cpp_binary`, `cpp_test` | Debugger / test working directory. |
 | `COMMAND_ARGUMENTS` | `cpp_binary` | VS debugger command-line arguments. |
 | `SOURCE_DIR` | all | Base dir for relative sources (default: current list dir). |
@@ -218,6 +221,48 @@ no-op — it creates no target and never acquires Google Test.
 > keyword is rejected with a configure-time error (it was previously dropped silently —
 > [#4](https://github.com/alexames/targets/issues/4)). Unknown or misspelled arguments are
 > likewise rejected instead of being ignored.
+
+## Installing & exporting libraries
+
+By default a `cpp_library` target lives only in your build tree: its public include
+directories are plain source paths and no install rules are emitted, so a downstream
+project can't consume it with `find_package`. Add **`INSTALL`** (optionally with
+**`EXPORT <set>`**) to opt the target into standard, relocatable install + export rules:
+
+```cmake
+project(MyProject VERSION 1.2.0)
+
+cpp_library(
+    TARGET MyLib
+    SOURCES src/mylib.cpp
+    HEADERS mylib/mylib.h
+    HEADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
+    INCLUDES PUBLIC include/
+    VERSION ${PROJECT_VERSION}
+    INSTALL
+    EXPORT MyProjectTargets
+)
+```
+
+This expands to ordinary CMake: the public includes are wrapped in
+`$<BUILD_INTERFACE:...>` / `$<INSTALL_INTERFACE:...>` (making the target export-safe),
+`install(TARGETS … EXPORT MyProjectTargets …)` installs the artifact into the standard
+`GNUInstallDirs` locations, the public headers are installed under the include dir, and a
+relocatable `MyProjectConfig.cmake` + version file + exported targets file are generated
+**once per export set** under `lib/cmake/MyProject`. After `cmake --install`, a downstream
+consumer needs no knowledge of Targets:
+
+```cmake
+find_package(MyProject 1.2.0 CONFIG REQUIRED)
+target_link_libraries(app PRIVATE MyProject::MyLib)
+```
+
+The exported name `MyProject::MyLib` is the **same** namespaced alias the target has in the
+build tree, so code links against it identically whether the library is vendored or
+consumed via `find_package`. Several libraries can share one `EXPORT` set. `cpp_binary`
+accepts `INSTALL`/`EXPORT` too. A worked end-to-end example lives in
+[`examples/install_export`](examples/install_export); a downstream consumer is in
+[`tests/consume_install`](tests/consume_install).
 
 ## Platform-conditional entries
 
@@ -359,6 +404,7 @@ targets/
 │   │   ├── cpp_library.cmake       # cpp_library wrapper
 │   │   ├── cpp_binary.cmake        # cpp_binary wrapper
 │   │   ├── cpp_test.cmake          # cpp_test wrapper (+ GTest integration)
+│   │   ├── install_export.cmake    # install/export rules (INSTALL/EXPORT)
 │   │   └── platform_parser.cmake   # platform-conditional argument filtering
 │   ├── dependencies/
 │   │   ├── import_dependencies.cmake  # namespace-based subdirectory import
@@ -398,8 +444,6 @@ The test suite currently includes script-mode unit tests for the platform parser
 Development is tracked in the
 [issue tracker](https://github.com/alexames/targets/issues). Highlights on the roadmap:
 
-- Installable/exportable libraries so Targets-built libraries are `find_package`-able
-  downstream ([#20](https://github.com/alexames/targets/issues/20)).
 - SHARED-library ergonomics on Windows (export headers, DLL staging)
   ([#21](https://github.com/alexames/targets/issues/21)).
 - Pluggable test frameworks and lazy GTest acquisition

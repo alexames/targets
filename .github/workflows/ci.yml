@@ -124,3 +124,48 @@ jobs:
       - name: Run consumer (Windows)
         if: runner.os == 'Windows'
         run: .\build-consume\Release\greet.exe
+
+  install-export:
+    name: Install + downstream find_package on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      # End-to-end proof of the install/export feature (issue #20). The producer is the
+      # examples/install_export project: a cpp_library marked INSTALL EXPORT. It has no
+      # external dependencies, so no vcpkg toolchain is needed -- the OS's default compiler
+      # (gcc/clang/MSVC) suffices. Build it and install it to a staging prefix.
+      - name: Configure producer (install_export example)
+        run: cmake -B build-produce -S examples/install_export -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/stage"
+
+      - name: Build producer
+        run: cmake --build build-produce --config Release
+
+      - name: Install producer
+        run: cmake --install build-produce --config Release
+
+      # The consumer (tests/consume_install) does NOT include Targets; it relies solely on
+      # the generated package config. find_package(WidgetKit CONFIG REQUIRED) must resolve
+      # against the staging prefix and the exported WidgetKit::Widget target must link.
+      - name: Configure consumer against the install prefix
+        run: cmake -B build-consume -S tests/consume_install -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ github.workspace }}/stage"
+
+      - name: Build consumer
+        run: cmake --build build-consume --config Release
+
+      - name: Run consumer (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: ./build-consume/use_widget
+
+      - name: Run consumer (Windows)
+        if: runner.os == 'Windows'
+        run: .\build-consume\Release\use_widget.exe
