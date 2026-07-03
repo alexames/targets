@@ -277,3 +277,18 @@ add_test(
 )
 set_tests_properties(cpp_test_explicit_folder PROPERTIES
   PASS_REGULAR_EXPRESSION "EXPLICIT_FOLDER_OK")
+
+# Install/export rule generation (regression test for issue #20). cpp_library(... INSTALL
+# EXPORT ...) must make the target export-safe (public include dirs wrapped in
+# BUILD/INSTALL_INTERFACE) and generate the install(TARGETS)/install(EXPORT)/package-config
+# rules. Configuring runs the generate step too, so CMake validates the emitted
+# install(EXPORT) at generate time; a leaked source path would make generation fail. The
+# exit code decides: any FATAL_ERROR (from the project's assertions or from generation)
+# fails the test. The full install -> find_package -> link -> run round trip is exercised
+# by the install-export CI job against tests/consume_install.
+add_test(
+  NAME cpp_library_install_export
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_install_export"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_install_export"
+)

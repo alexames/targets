@@ -20,6 +20,7 @@ get_filename_component(_TARGETS_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/dependencies/import_dependencies.cmake")
 include("${_TARGETS_MODULE_DIR}/platform_parser.cmake")
+include("${_TARGETS_MODULE_DIR}/install_export.cmake")
 
 # Reject arguments that cmake_parse_arguments could not assign to a known keyword.
 #
@@ -127,10 +128,12 @@ function(cpp_target)
   set(options
     STATIC
     SHARED
-    UNITY_BUILD)
+    UNITY_BUILD
+    INSTALL)                  # Generate install + export rules (issue #20)
   set(one_value_args
     TYPE                      # LIBRARY or EXECUTABLE (required)
     TARGET                    # Target name (required)
+    EXPORT                    # Export-set name for install/export (implies INSTALL)
     FOLDER                    # IDE folder path
     SOURCE_DIR                # Source directory (default: CMAKE_CURRENT_LIST_DIR)
     HEADER_DIR                # Header directory (default: CMAKE_CURRENT_LIST_DIR/Include)
@@ -170,6 +173,22 @@ function(cpp_target)
   endif()
   if(NOT args_TARGET)
     message(FATAL_ERROR "cpp_target: TARGET argument is required")
+  endif()
+
+  # Decide whether install/export rules are requested. EXPORT implies INSTALL: naming an
+  # export set only makes sense if the target is installed. When INSTALL is given for a
+  # library without an explicit EXPORT, default the export set to <Project>Targets so a
+  # downstream find_package(<Project>) still yields the namespaced target. Executables
+  # marked INSTALL without EXPORT are installed to the runtime dir but not exported.
+  set(_do_install FALSE)
+  set(_export_set "")
+  if(args_INSTALL OR args_EXPORT)
+    set(_do_install TRUE)
+    if(args_EXPORT)
+      set(_export_set "${args_EXPORT}")
+    elseif(args_TYPE STREQUAL "LIBRARY")
+      set(_export_set "${PROJECT_NAME}Targets")
+    endif()
   endif()
 
   # Set defaults
@@ -341,10 +360,20 @@ function(cpp_target)
     _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
     _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
     _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
-    target_include_directories(${args_TARGET} INTERFACE
-      ${PUBLIC_INCLUDES}
-      "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
-    )
+    # When the target is exported its public include dirs must be wrapped in BUILD/INSTALL
+    # interface generator expressions (a plain source path breaks install(EXPORT)); the
+    # wrapped directories are also the header-install sources. Otherwise the include dirs
+    # stay plain, preserving the non-install behavior exactly.
+    if(_do_install)
+      _targets_wrap_public_includes(
+        _public_include_entries _header_install_dirs "${args_HEADER_DIR}" ${PUBLIC_INCLUDES})
+      target_include_directories(${args_TARGET} INTERFACE ${_public_include_entries})
+    else()
+      target_include_directories(${args_TARGET} INTERFACE
+        ${PUBLIC_INCLUDES}
+        "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
+      )
+    endif()
 
     _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
     _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
@@ -402,15 +431,32 @@ function(cpp_target)
     _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
     _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
     _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
-    target_include_directories(
-      ${args_TARGET}
-      PUBLIC
-        ${PUBLIC_INCLUDES}
-        "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
-      PRIVATE
-        ${PRIVATE_INCLUDES}
-        "${args_SOURCE_DIR}"
-    )
+    # When the target is exported its public include dirs must be wrapped in BUILD/INSTALL
+    # interface generator expressions (a plain source path breaks install(EXPORT)); the
+    # wrapped directories are also the header-install sources. Otherwise the include dirs
+    # stay plain, preserving the non-install behavior exactly.
+    if(_do_install)
+      _targets_wrap_public_includes(
+        _public_include_entries _header_install_dirs "${args_HEADER_DIR}" ${PUBLIC_INCLUDES})
+      target_include_directories(
+        ${args_TARGET}
+        PUBLIC
+          ${_public_include_entries}
+        PRIVATE
+          ${PRIVATE_INCLUDES}
+          "${args_SOURCE_DIR}"
+      )
+    else()
+      target_include_directories(
+        ${args_TARGET}
+        PUBLIC
+          ${PUBLIC_INCLUDES}
+          "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
+        PRIVATE
+          ${PRIVATE_INCLUDES}
+          "${args_SOURCE_DIR}"
+      )
+    endif()
 
     # Set C++ standard
     set_target_properties(
@@ -531,5 +577,19 @@ function(cpp_target)
   # target type; the header-only path used to drop it silently (see issue #13).
   if(args_PROPERTIES)
     set_target_properties(${args_TARGET} PROPERTIES ${args_PROPERTIES})
+  endif()
+
+  # Generate install/export rules when requested (issue #20). The public-include wrapping
+  # above already made the target export-safe and collected its header directories; this
+  # installs the artifact and headers and, when an export set is named, adds the target to
+  # it and emits the package config so downstream find_package(<Project>) resolves the
+  # namespaced target. The namespace matches the build-tree alias derived above.
+  if(_do_install)
+    _targets_install_target(
+      TARGET ${args_TARGET}
+      EXPORT "${_export_set}"
+      NAMESPACE "${namespace}"
+      HEADER_DIRS ${_header_install_dirs}
+    )
   endif()
 endfunction()
