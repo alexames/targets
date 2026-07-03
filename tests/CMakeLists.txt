@@ -168,3 +168,38 @@ add_test(
 )
 set_tests_properties(cpp_test_install_gtest_hygiene PROPERTIES
   PASS_REGULAR_EXPRESSION "INSTALL_GTEST_OFF_OK")
+
+# Header-only INTERFACE semantics (regression tests for issue #13). The INTERFACE
+# (header-only) branch used to apply only PUBLIC usage-requirements and silently drop
+# FOLDER, PROPERTIES, PRIVATE usage-requirements, VERSION/SOVERSION, PRECOMPILE_HEADERS,
+# and UNITY_BUILD. It must now apply what is valid on an INTERFACE target (PUBLIC
+# usage-requirements, FOLDER, PROPERTIES) and warn about anything that only applies to a
+# compiled target. The "apply" scenario configures cleanly (any FATAL_ERROR assertion
+# fails the test); the "ignored" scenario passes iff the warning is emitted.
+add_test(
+  NAME cpp_target_interface_apply
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=apply
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_interface_semantics"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_interface_semantics_apply"
+)
+# No PASS_REGULAR_EXPRESSION, so the exit code decides: any FATAL_ERROR assertion in the
+# scenario fails the test. FAIL_REGULAR_EXPRESSION additionally fails it if the ignored-
+# argument warning is emitted for the all-valid inputs (the warning must not fire here).
+set_tests_properties(cpp_target_interface_apply PROPERTIES
+  FAIL_REGULAR_EXPRESSION "only apply to a compiled target and were ignored")
+
+add_test(
+  NAME cpp_target_interface_ignored_warns
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=ignored
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_interface_semantics"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_interface_semantics_ignored"
+)
+# PASS requires the warning to be emitted; FAIL_REGULAR_EXPRESSION makes the scenario's
+# leak assertion effective -- with PASS_REGULAR_EXPRESSION set, CTest ignores the exit
+# code, so the FATAL_ERROR raised if the ignored PRIVATE dependency leaks onto the
+# INTERFACE target is only honored via this FAIL regex (FAIL takes precedence over PASS).
+set_tests_properties(cpp_target_interface_ignored_warns PROPERTIES
+  PASS_REGULAR_EXPRESSION "only apply to a compiled target and were ignored"
+  FAIL_REGULAR_EXPRESSION "PRIVATE dependency must not be applied")

@@ -322,9 +322,16 @@ function(cpp_target)
 
   # Configure interface libraries differently
   if(_is_interface_library)
-    # Interface libraries use INTERFACE keyword for everything
+    # A header-only INTERFACE library has no private compile step and produces no built
+    # artifact, so several arguments have no meaning on it. Everything valid on an INTERFACE
+    # target is applied: the PUBLIC/INTERFACE usage-requirements below, plus FOLDER and user
+    # PROPERTIES (shared with compiled targets, further down). Everything that only applies
+    # to a compiled target is reported with a warning rather than being dropped silently
+    # (see issue #13). PRIVATE usage-requirements are still parsed here so the warning can
+    # name exactly what was ignored.
     _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
     _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
+    _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
     target_include_directories(${args_TARGET} INTERFACE
       ${PUBLIC_INCLUDES}
       "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
@@ -332,14 +339,53 @@ function(cpp_target)
 
     _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
     _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
+    _targets_parse_platforms(PRIVATE_DEFINITIONS ${PRIVATE_DEFINITIONS})
     target_compile_definitions(${args_TARGET} INTERFACE ${PUBLIC_DEFINITIONS})
 
     _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})
     _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
+    _targets_parse_platforms(PRIVATE_DEPENDENCIES ${PRIVATE_DEPENDENCIES})
     import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")
     target_link_libraries(${args_TARGET} INTERFACE ${PUBLIC_DEPENDENCIES})
 
     target_compile_features(${args_TARGET} INTERFACE cxx_std_${args_CXX_STANDARD})
+
+    # Warn about arguments that have no meaning on a header-only INTERFACE library instead
+    # of dropping them silently (see issue #13). PRIVATE usage-requirements need the private
+    # compile step this target does not have; VERSION/SOVERSION describe a built artifact it
+    # does not produce; PRECOMPILE_HEADERS and UNITY_BUILD are compilation settings with
+    # nothing to compile. They are collected and reported once, naming the target and each
+    # ignored argument.
+    set(ignored_args "")
+    if(PRIVATE_INCLUDES)
+      list(APPEND ignored_args "INCLUDES (PRIVATE)")
+    endif()
+    if(PRIVATE_DEFINITIONS)
+      list(APPEND ignored_args "DEFINITIONS (PRIVATE)")
+    endif()
+    if(PRIVATE_DEPENDENCIES)
+      list(APPEND ignored_args "DEPENDENCIES (PRIVATE)")
+    endif()
+    if(args_VERSION)
+      list(APPEND ignored_args "VERSION")
+    endif()
+    if(args_SOVERSION)
+      list(APPEND ignored_args "SOVERSION")
+    endif()
+    if(args_PRECOMPILE_HEADERS)
+      list(APPEND ignored_args "PRECOMPILE_HEADERS")
+    endif()
+    if(args_UNITY_BUILD)
+      list(APPEND ignored_args "UNITY_BUILD")
+    endif()
+    if(ignored_args)
+      string(REPLACE ";" ", " ignored_args "${ignored_args}")
+      message(WARNING
+        "cpp_target: '${args_TARGET}' is a header-only INTERFACE library (HEADERS but no "
+        "SOURCES); the following argument(s) only apply to a compiled target and were "
+        "ignored: ${ignored_args}. An INTERFACE library has no private compile step and "
+        "produces no built artifact.")
+    endif()
   else()
     # Regular libraries and executables
 
@@ -422,15 +468,6 @@ function(cpp_target)
       endif()
     endif()
 
-    # Set IDE folder
-    if(args_FOLDER)
-      set_target_properties(${args_TARGET} PROPERTIES FOLDER "${args_FOLDER}")
-    elseif(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
-      set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}/${relative_path_from_root}")
-    else()
-      set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}")
-    endif()
-
     # Set working directory for executables (debugger)
     if(args_TYPE STREQUAL "EXECUTABLE" AND args_WORKING_DIRECTORY)
       set_target_properties(
@@ -463,10 +500,25 @@ function(cpp_target)
         set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD_BATCH_SIZE 16)
       endif()
     endif()
+  endif()
 
-    # Apply additional properties
-    if(args_PROPERTIES)
-      set_target_properties(${args_TARGET} PROPERTIES ${args_PROPERTIES})
-    endif()
+  # Set IDE folder. FOLDER is valid on every target type -- executables, compiled
+  # libraries, and INTERFACE (header-only) libraries (CMake >= 3.19) -- so it is applied
+  # here for all of them rather than only compiled targets, which used to silently drop it
+  # for header-only libraries (see issue #13). When the caller does not pass an explicit
+  # FOLDER, derive it from the enclosing project (see issue #8).
+  if(args_FOLDER)
+    set_target_properties(${args_TARGET} PROPERTIES FOLDER "${args_FOLDER}")
+  elseif(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
+    set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}/${relative_path_from_root}")
+  else()
+    set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}")
+  endif()
+
+  # Apply additional user-supplied properties last, so they can override anything set
+  # above. Valid on INTERFACE targets too (CMake >= 3.19), so this is shared across every
+  # target type; the header-only path used to drop it silently (see issue #13).
+  if(args_PROPERTIES)
+    set_target_properties(${args_TARGET} PROPERTIES ${args_PROPERTIES})
   endif()
 endfunction()
