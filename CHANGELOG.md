@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-07-03
+## [0.10.0] - 2026-07-03
 
 This release hardens the core rules, adds installation/export support, expands the
 code-generation and toolchain-hygiene surface, and brings the continuous-integration
@@ -72,7 +72,8 @@ suite up to full coverage across Linux, macOS, and Windows.
 
 - Stale, private-project-specific artifacts `SUMMARY.md` and `INTEGRATION_GUIDE.md` ([#19]).
 
-[Unreleased]: https://github.com/alexames/targets/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/alexames/targets/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/alexames/targets/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/alexames/targets/releases/tag/v0.9.0
 
 [#1]: https://github.com/alexames/targets/issues/1
