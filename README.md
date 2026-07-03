@@ -223,6 +223,14 @@ cpp_test(
 `gtest_discover_tests`' `EXTRA_ARGS`). They are distinct from `COMMAND_ARGUMENTS`, which only
 sets the Visual Studio debugger's F5 arguments and has no effect on `ctest`.
 
+**Empty-suite guard.** By default, a `cpp_test` target whose binary registers **zero**
+GoogleTest cases makes `ctest` **fail** instead of silently passing. Zero cases means the
+sources define no `TEST()`/`TEST_F()`, a `--gtest_filter` matched nothing, or a mislink
+dropped the test-registration translation unit — situations where CTest would otherwise report
+success while testing nothing. `cpp_test` registers a `<target>_no_tests_registered` CTest test
+that fails with a clear diagnostic when discovery finds no cases. Pass `ALLOW_NO_TESTS` to opt a
+deliberately test-free binary out of the guard.
+
 ### Common arguments
 
 | Argument | Rules | Meaning |
@@ -258,6 +266,7 @@ sets the Visual Studio debugger's F5 arguments and has no effect on `ctest`.
 | `TIMEOUT` | `cpp_test` | CTest per-test timeout in seconds (overrides the `SIZE` default). |
 | `LABELS` | `cpp_test` | CTest labels applied to every discovered test (`ctest -L <label>`). |
 | `ARGS` | `cpp_test` | Arguments passed to the test executable when CTest runs it. |
+| `ALLOW_NO_TESTS` | `cpp_test` | Opt out of the empty-suite guard for a deliberately test-free binary. |
 | `SOURCE_DIR` | all | Base dir for relative sources (default: current list dir). |
 | `HEADER_DIR` | all | Base dir for relative headers (default: `<current list dir>/Include`). |
 | `NAMESPACE_ROOT` | all | Root for namespace-alias derivation (default: `${PROJECT_SOURCE_DIR}/Source`). |
