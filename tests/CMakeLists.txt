@@ -60,3 +60,23 @@ add_test(
 )
 set_tests_properties(cpp_target_valid_visibility PROPERTIES
   PASS_REGULAR_EXPRESSION "VALID_OK")
+
+# MSVC compile/link flag scoping (regression test for issue #5). /ZI must never be
+# injected as an unconditional (Release-reaching) option and /SAFESEH:NO must not reach
+# non-x86 architectures, while /utf-8 stays unconditional. A FATAL_ERROR in any assertion
+# fails the test. On non-MSVC toolchains the flags are absent and the test still passes.
+add_test(
+  NAME cpp_target_msvc_flags_default
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_msvc_flags"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_msvc_flags_default"
+)
+
+# Same project with the edit-and-continue opt-out: /ZI must be absent in every form.
+add_test(
+  NAME cpp_target_msvc_flags_no_edit_continue
+  COMMAND "${CMAKE_COMMAND}"
+    -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_msvc_flags"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_msvc_flags_no_edit_continue"
+)
