@@ -4,5 +4,15 @@
   "description": "Modern CMake build abstraction library with Bazel-like ergonomics",
   "homepage": "https://github.com/yourusername/targets",
   "license": "MIT",
-  "supports": "!uwp"
+  "supports": "!uwp",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
 }

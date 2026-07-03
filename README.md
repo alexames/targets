@@ -108,10 +108,10 @@ find_package(Targets CONFIG REQUIRED)
 include(Targets)
 ```
 
-> The registry package works via `find_package`. Note the in-repo
-> [overlay port](ports/targets/) has diverged from what's published and is currently
-> broken — prefer the registry (or Option A) until
-> [#2](https://github.com/alexames/targets/issues/2) is resolved.
+> The registry package works via `find_package`. The in-repo
+> [overlay port](ports/targets/) installs the same layout by driving this project's own
+> install rules, so it can be used directly with vcpkg `overlay-ports` for local
+> development (see [docs/MIGRATION.md](docs/MIGRATION.md)).
 
 ## Core rules
 
