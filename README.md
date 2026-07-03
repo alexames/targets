@@ -544,9 +544,19 @@ Consumer-facing options:
   shared-library dependency DLLs next to the executable after building (Windows). Set it to
   `OFF` to suppress DLL staging. See [SHARED libraries on Windows](#shared-libraries-on-windows).
 
-The test suite currently includes script-mode unit tests for the platform parser
-(`tests/unit/`). Broader integration coverage is planned
-([#24](https://github.com/alexames/targets/issues/24)).
+The test suite has two layers: script-mode unit tests for the platform parser
+(`tests/unit/`, run with pure `cmake -P`) and configure-mode integration tests
+(`tests/integration/`) that configure small projects and assert target properties or match
+expected diagnostics. Run the whole suite with `ctest` as shown above.
+
+CI (`.github/workflows/ci.yml`) runs on ubuntu-latest, windows-latest, and macos-latest:
+
+- **build-examples** — builds every example and runs the executable/shared-library ones.
+- **test-suite** — configures with `TARGETS_BUILD_TESTS=ON` and runs the full `ctest` suite.
+- **install-export** — installs the `install_export` example and consumes it through
+  `find_package(WidgetKit CONFIG REQUIRED)` from a separate project.
+- **consume-port** — installs the in-repo vcpkg port and consumes it through
+  `find_package(Targets CONFIG REQUIRED)`.
 
 ## Roadmap & known issues
 
