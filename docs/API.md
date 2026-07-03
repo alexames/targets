@@ -9,6 +9,7 @@ Define a C++ library target.
 ```cmake
 cpp_library(
     TARGET <name>
+    [STATIC | SHARED]
     [SOURCES <file>...]
     [HEADERS <file>...]
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
@@ -28,6 +29,10 @@ cpp_library(
 **Parameters:**
 
 - **TARGET** (required): The name of the library target
+- **STATIC** / **SHARED**: Flags selecting the library's linkage. A library is STATIC by
+  default (or with an explicit `STATIC`) and SHARED with `SHARED`. The two are mutually
+  exclusive — passing both is a configure-time error. Ignored when the target resolves to
+  a header-only INTERFACE library (HEADERS but no SOURCES).
 - **SOURCES**: List of source files (.cpp, .cc, .cxx, etc.)
 - **HEADERS**: List of header files (.h, .hpp, .hxx, etc.)
 - **INCLUDES**: Include directories. Every value must be prefixed with PUBLIC or

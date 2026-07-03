@@ -251,6 +251,15 @@ function(cpp_target)
 
   # Create the target
   if(args_TYPE STREQUAL "LIBRARY")
+    # STATIC and SHARED select the library's linkage and are mutually exclusive: passing
+    # both is contradictory. Reject it with a clear error instead of silently letting
+    # SHARED win, mirroring the EXECUTABLE validation below (see issue #14). A library
+    # defaults to STATIC when neither flag is given.
+    if(args_STATIC AND args_SHARED)
+      message(FATAL_ERROR
+        "cpp_target: STATIC and SHARED cannot both be specified for a library; choose "
+        "one (a library defaults to STATIC when neither is given).")
+    endif()
     if(args_SHARED)
       set(library_type SHARED)
     else()
