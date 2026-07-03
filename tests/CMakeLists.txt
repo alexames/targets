@@ -6,4 +6,14 @@ add_test(
   COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_LIST_DIR}/unit/test_parse_platforms.cmake"
 )
 
-# TODO: Add integration test projects here
+# Configure-mode integration tests: each configures a small project that exercises a
+# rule and asserts the result. A non-zero configure exit (e.g. a FATAL_ERROR) fails
+# the test.
+
+# embed_binary() must configure without error (regression test for issue #1).
+add_test(
+  NAME embed_binary_configure
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/embed_binary"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/embed_binary"
+)

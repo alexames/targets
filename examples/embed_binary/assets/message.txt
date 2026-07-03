@@ -1,0 +1,2 @@
+Hello from an embedded asset!
+This file is compiled directly into the binary by embed_binary().
