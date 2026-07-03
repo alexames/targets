@@ -6,6 +6,8 @@ include_guard(GLOBAL)
 get_filename_component(_TARGETS_CODEGEN_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_CODEGEN_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/dependencies/import_dependencies.cmake")
+# For the shared _targets_check_args() argument validator.
+include("${_TARGETS_ROOT_DIR}/core/cpp_target.cmake")
 
 # Define custom target property for schema directories
 define_property(TARGET PROPERTY FLATBUFFERS_SCHEMA_DIR
@@ -59,6 +61,12 @@ function(flatbuffer_cpp_library)
     "${options}"
     "${one_value_args}"
     "${multi_value_args}")
+
+  # Reject typo'd or misplaced arguments instead of silently ignoring them.
+  _targets_check_args("flatbuffer_cpp_library"
+    "${args_UNPARSED_ARGUMENTS}"
+    "${args_KEYWORDS_MISSING_VALUES}"
+    ${options} ${one_value_args} ${multi_value_args})
 
   # Validate required arguments
   if(NOT args_TARGET)

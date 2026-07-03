@@ -13,17 +13,55 @@ get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/dependencies/import_dependencies.cmake")
 include("${_TARGETS_MODULE_DIR}/platform_parser.cmake")
 
-# Helper function to parse PUBLIC/PRIVATE access specifiers
-function(_targets_parse_access_specifier VAR_NAME)
+# Reject arguments that cmake_parse_arguments could not assign to a known keyword.
+#
+# RULE names the calling rule for diagnostics. UNPARSED is the rule's
+# <prefix>_UNPARSED_ARGUMENTS, MISSING is its <prefix>_KEYWORDS_MISSING_VALUES, and
+# ARGN carries the rule's full set of valid keywords (printed as a hint). Values are
+# passed positionally rather than under keywords so a stray token cannot collide with
+# this helper's own argument names. An unrecognized argument is a hard error: it is
+# almost always a misspelled keyword or a value that lost its keyword, either of which
+# silently changes the target if left unchecked (see issue #4). A keyword given no
+# values is only a warning.
+function(_targets_check_args RULE UNPARSED MISSING)
+  if(NOT "${UNPARSED}" STREQUAL "")
+    string(REPLACE ";" ", " _unparsed "${UNPARSED}")
+    set(_hint "")
+    if(NOT "${ARGN}" STREQUAL "")
+      string(REPLACE ";" ", " _valid_keywords "${ARGN}")
+      set(_hint " Valid keywords are: ${_valid_keywords}.")
+    endif()
+    message(FATAL_ERROR
+      "${RULE}: unrecognized argument(s): ${_unparsed}. This is usually a "
+      "misspelled keyword or a value missing its PUBLIC/PRIVATE keyword.${_hint}")
+  endif()
+  if(NOT "${MISSING}" STREQUAL "")
+    string(REPLACE ";" ", " _missing "${MISSING}")
+    message(WARNING "${RULE}: keyword(s) given with no values: ${_missing}.")
+  endif()
+endfunction()
+
+# Split a visibility-taking argument's values into PUBLIC_<VAR_NAME> and
+# PRIVATE_<VAR_NAME> (set in the caller's scope). RULE names the calling rule for
+# diagnostics. Every value must appear under a PUBLIC or PRIVATE keyword: entries
+# placed before the first access keyword would otherwise be dropped silently, so
+# they are rejected with a hard error (see issue #4).
+function(_targets_parse_access_specifier RULE VAR_NAME)
   set(options)
   set(one_value_args)
   set(multi_value_args PUBLIC PRIVATE)
   cmake_parse_arguments(
-    PARSE_ARGV 1
+    PARSE_ARGV 2
     ACCESS_SPECIFIER
     "${options}"
     "${one_value_args}"
     "${multi_value_args}")
+  if(NOT "${ACCESS_SPECIFIER_UNPARSED_ARGUMENTS}" STREQUAL "")
+    message(FATAL_ERROR
+      "${RULE}: ${VAR_NAME} values must be grouped under PUBLIC or PRIVATE. These "
+      "entries precede the first access keyword and would be dropped: "
+      "${ACCESS_SPECIFIER_UNPARSED_ARGUMENTS}.")
+  endif()
   set(PUBLIC_${VAR_NAME} ${ACCESS_SPECIFIER_PUBLIC} PARENT_SCOPE)
   set(PRIVATE_${VAR_NAME} ${ACCESS_SPECIFIER_PRIVATE} PARENT_SCOPE)
 endfunction()
@@ -64,6 +102,12 @@ function(cpp_target)
     "${options}"
     "${one_value_args}"
     "${multi_value_args}")
+
+  # Reject typo'd or misplaced arguments instead of silently ignoring them.
+  _targets_check_args("cpp_target"
+    "${args_UNPARSED_ARGUMENTS}"
+    "${args_KEYWORDS_MISSING_VALUES}"
+    ${options} ${one_value_args} ${multi_value_args})
 
   # Validate required arguments
   if(NOT args_TYPE)
@@ -187,18 +231,18 @@ function(cpp_target)
   # Configure interface libraries differently
   if(_is_interface_library)
     # Interface libraries use INTERFACE keyword for everything
-    _targets_parse_access_specifier(INCLUDES ${args_INCLUDES})
+    _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
     _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
     target_include_directories(${args_TARGET} INTERFACE
       ${PUBLIC_INCLUDES}
       "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
     )
 
-    _targets_parse_access_specifier(DEFINITIONS ${args_DEFINITIONS})
+    _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
     _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
     target_compile_definitions(${args_TARGET} INTERFACE ${PUBLIC_DEFINITIONS})
 
-    _targets_parse_access_specifier(DEPENDENCIES ${args_DEPENDENCIES})
+    _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})
     _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
     import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")
     target_link_libraries(${args_TARGET} INTERFACE ${PUBLIC_DEPENDENCIES})
@@ -208,7 +252,7 @@ function(cpp_target)
     # Regular libraries and executables
 
     # Add include directories
-    _targets_parse_access_specifier(INCLUDES ${args_INCLUDES})
+    _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
     _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
     _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
     target_include_directories(
@@ -231,7 +275,7 @@ function(cpp_target)
     )
 
     # Add compiler definitions
-    _targets_parse_access_specifier(DEFINITIONS ${args_DEFINITIONS})
+    _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
     _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
     _targets_parse_platforms(PRIVATE_DEFINITIONS ${PRIVATE_DEFINITIONS})
     target_compile_definitions(
@@ -252,7 +296,7 @@ function(cpp_target)
     endif()
 
     # Add dependencies
-    _targets_parse_access_specifier(DEPENDENCIES ${args_DEPENDENCIES})
+    _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})
     _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
     _targets_parse_platforms(PRIVATE_DEPENDENCIES ${PRIVATE_DEPENDENCIES})
     import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")

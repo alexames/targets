@@ -11,9 +11,9 @@ cpp_library(
     TARGET <name>
     [SOURCES <file>...]
     [HEADERS <file>...]
-    [INCLUDES [PUBLIC|PRIVATE] <dir>...]
-    [DEFINITIONS [PUBLIC|PRIVATE] <def>...]
-    [DEPENDENCIES [PUBLIC|PRIVATE] <target>...]
+    [INCLUDES <PUBLIC|PRIVATE> <dir>...]
+    [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
+    [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
     [PROPERTIES <prop> <value>...]
@@ -30,11 +30,14 @@ cpp_library(
 - **TARGET** (required): The name of the library target
 - **SOURCES**: List of source files (.cpp, .cc, .cxx, etc.)
 - **HEADERS**: List of header files (.h, .hpp, .hxx, etc.)
-- **INCLUDES**: Include directories. Prefix with PUBLIC or PRIVATE
+- **INCLUDES**: Include directories. Every value must be prefixed with PUBLIC or
+  PRIVATE; entries before the first keyword are rejected with a configure-time error
   - PUBLIC: Directories exported to consumers
   - PRIVATE: Directories only for building this target
-- **DEFINITIONS**: Preprocessor definitions. Prefix with PUBLIC or PRIVATE
-- **DEPENDENCIES**: Link dependencies. Prefix with PUBLIC or PRIVATE
+- **DEFINITIONS**: Preprocessor definitions. Every value must be prefixed with PUBLIC
+  or PRIVATE
+- **DEPENDENCIES**: Link dependencies. Every value must be prefixed with PUBLIC or
+  PRIVATE
   - PUBLIC: Dependencies exported to consumers
   - PRIVATE: Dependencies only for building this target
 - **CXX_STANDARD**: C++ standard version (11, 14, 17, 20, 23, etc.). Default: 23
@@ -91,9 +94,9 @@ cpp_binary(
     TARGET <name>
     [SOURCES <file>...]
     [HEADERS <file>...]
-    [INCLUDES [PUBLIC|PRIVATE] <dir>...]
-    [DEFINITIONS [PUBLIC|PRIVATE] <def>...]
-    [DEPENDENCIES [PUBLIC|PRIVATE] <target>...]
+    [INCLUDES <PUBLIC|PRIVATE> <dir>...]
+    [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
+    [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
     [PROPERTIES <prop> <value>...]
@@ -136,9 +139,9 @@ cpp_test(
     TARGET <name>
     [SOURCES <file>...]
     [HEADERS <file>...]
-    [INCLUDES [PUBLIC|PRIVATE] <dir>...]
-    [DEFINITIONS [PUBLIC|PRIVATE] <def>...]
-    [DEPENDENCIES [PUBLIC|PRIVATE] <target>...]
+    [INCLUDES <PUBLIC|PRIVATE> <dir>...]
+    [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
+    [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
     [PROPERTIES <prop> <value>...]
@@ -357,6 +360,11 @@ All functions support PUBLIC/PRIVATE access specifiers for:
 
 **PUBLIC**: Transitive - exported to targets that depend on this one
 **PRIVATE**: Non-transitive - only used when building this target
+
+The access keyword is **required**: every value of `INCLUDES`, `DEFINITIONS`, and
+`DEPENDENCIES` must appear under a `PUBLIC` or `PRIVATE` keyword. Values placed before
+the first keyword are rejected with a configure-time error rather than silently
+dropped.
 
 ### Source Auto-Discovery
 

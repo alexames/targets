@@ -3,6 +3,11 @@
 
 include_guard(GLOBAL)
 
+# For the shared _targets_check_args() argument validator.
+get_filename_component(_TARGETS_UTILS_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_UTILS_DIR}" PATH)
+include("${_TARGETS_ROOT_DIR}/core/cpp_target.cmake")
+
 # Embed binary files as C++ code
 #
 # Creates a static library containing embedded binary data accessible from C++.
@@ -40,6 +45,12 @@ function(embed_binary)
     "${options}"
     "${one_value_args}"
     "${multi_value_args}")
+
+  # Reject typo'd or misplaced arguments instead of silently ignoring them.
+  _targets_check_args("embed_binary"
+    "${args_UNPARSED_ARGUMENTS}"
+    "${args_KEYWORDS_MISSING_VALUES}"
+    ${options} ${one_value_args} ${multi_value_args})
 
   # Validate required arguments
   if(NOT args_TARGET)
