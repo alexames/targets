@@ -61,13 +61,23 @@ function(_targets_acquire_gtest)
   set_property(GLOBAL PROPERTY _TARGETS_GTEST_ACQUIRED TRUE)
 endfunction()
 
-# Enable testing if not already enabled
-if(NOT CMAKE_TESTING_ENABLED)
-  enable_testing()
-endif()
-
-# Define a C++ test target
+# Define a C++ test target.
+#
+# Testing must be enabled at the CONSUMER'S TOP LEVEL: call include(CTest) (which also
+# defines the standard BUILD_TESTING option) or enable_testing() in the top-level
+# CMakeLists.txt. This module deliberately does NOT call enable_testing() at include
+# time. enable_testing() only takes effect for the directory scope in which it runs, and
+# this file is include-guarded, so enabling testing from whatever subdirectory happens to
+# include Targets first would silently drop tests registered in sibling/parent scopes from
+# CTest. See https://github.com/alexames/targets/issues/9.
 function(cpp_test)
+  # Honor the standard CTest opt-out. When BUILD_TESTING is explicitly OFF (typically set
+  # by include(CTest)), create no test target and acquire no test framework. Left
+  # undefined, tests are still created — matching CTest's own default-on behavior.
+  if(DEFINED BUILD_TESTING AND NOT BUILD_TESTING)
+    return()
+  endif()
+
   # Acquire the test framework on first use (deferred from module include time
   # so a bare include(Targets) never touches the network — see issue #3).
   _targets_acquire_gtest()

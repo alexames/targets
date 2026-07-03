@@ -151,6 +151,8 @@ cpp_test(
 
 Same parameters as `cpp_binary()`. Automatically links Google Test and registers tests with CTest.
 
+Enable testing at your **top-level** `CMakeLists.txt` with `enable_testing()` or, idiomatically, `include(CTest)`. `cpp_test()` does not call `enable_testing()` itself, because that command is directory-scoped and calling it from within the module (in whatever directory first includes Targets) can silently drop tests from `ctest`. `cpp_test()` honors the standard `BUILD_TESTING` option: when it is `OFF`, `cpp_test()` is a no-op — no target is created and Google Test is not acquired.
+
 **Example:**
 
 ```cmake
