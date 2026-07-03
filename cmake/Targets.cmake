@@ -1,6 +1,6 @@
 # Targets - Modern CMake Build Abstraction
 # Version: see cmake/TargetsVersion.cmake (single source of truth)
-# Homepage: https://github.com/yourusername/targets
+# Homepage: https://github.com/alexames/targets
 # License: MIT
 
 if(TARGETS_INCLUDED)

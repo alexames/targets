@@ -17,7 +17,8 @@ include("${_TARGETS_ROOT_DIR}/core/cpp_target.cmake")
 #   TARGET: Name of the library target to create (required)
 #   FILES: List of binary files to embed (required)
 #   NAMESPACE: C++ namespace for the embedded data (optional)
-#   OUTPUT_DIR: Directory for generated source files (default: CMAKE_CURRENT_BINARY_DIR)
+#   OUTPUT_DIR: Directory for generated source files (default: a per-target subdirectory
+#               of CMAKE_CURRENT_BINARY_DIR, i.e. _embed_binary/<target>)
 #
 # Note: This is a simplified implementation. For production use, consider using
 # CMakeRC (https://github.com/vector-of-bool/cmrc) or a similar solution.

@@ -619,11 +619,17 @@ set_folder_for_targets(FOLDER "ThirdParty" TARGETS fmt spdlog)
 
 ### `embed_binary(TARGET <name> FILES <f>... [NAMESPACE <ns>] [OUTPUT_DIR <dir>])`
 
-Intended to embed binary files as a C++ static library.
+Embeds binary files into a C++ **STATIC** library: each file becomes a `<file>_data[]` byte
+array plus a `<file>_size`, wrapped in `NAMESPACE` (default `embedded`). `OUTPUT_DIR`
+overrides where the generated sources are written.
 
-> ⚠️ **Currently non-functional** — every call aborts configuration
-> ([#1](https://github.com/alexames/targets/issues/1)). For production embedding today,
-> prefer [CMakeRC](https://github.com/vector-of-bool/cmrc).
+```cmake
+embed_binary(TARGET EmbeddedAssets FILES assets/logo.png NAMESPACE assets)
+```
+
+> This is a deliberately basic implementation. For heavier production embedding (large
+> assets, compression, filesystem-like lookup) prefer
+> [CMakeRC](https://github.com/vector-of-bool/cmrc).
 
 ## Project structure
 
