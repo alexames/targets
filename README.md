@@ -120,9 +120,10 @@ argument grammar (see [Common arguments](#common-arguments)).
 
 ### `cpp_library`
 
-Defines a C++ library. Produces a **STATIC** library by default, **SHARED** if you pass
-`SHARED`. If you provide `HEADERS` but no `SOURCES`, an **INTERFACE** (header-only)
-library is created automatically.
+Defines a C++ library. Produces a **STATIC** library by default (or if you pass
+`STATIC` explicitly), **SHARED** if you pass `SHARED`. `STATIC` and `SHARED` are mutually
+exclusive — passing both is a configure-time error. If you provide `HEADERS` but no
+`SOURCES`, an **INTERFACE** (header-only) library is created automatically.
 
 A header-only INTERFACE library carries the arguments that make sense for it: the
 **PUBLIC** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES` (applied as interface
@@ -204,7 +205,7 @@ no-op — it creates no target and never acquires Google Test.
 | `PRECOMPILE_HEADERS` | all | Headers to precompile. |
 | `UNITY_BUILD` | all | **Flag** — enable unity/jumbo build (presence = on). |
 | `UNITY_BUILD_BATCH_SIZE` | all | Files per unity chunk (default 16). |
-| `STATIC` / `SHARED` | `cpp_library` | Library linkage (default STATIC). |
+| `STATIC` / `SHARED` | `cpp_library` | **Flags** — library linkage (default STATIC); mutually exclusive, passing both errors. |
 | `VERSION` / `SOVERSION` | `cpp_library` | Library version / ABI version. |
 | `WORKING_DIRECTORY` | `cpp_binary`, `cpp_test` | Debugger / test working directory. |
 | `COMMAND_ARGUMENTS` | `cpp_binary` | VS debugger command-line arguments. |

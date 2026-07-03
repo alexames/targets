@@ -203,3 +203,39 @@ add_test(
 set_tests_properties(cpp_target_interface_ignored_warns PROPERTIES
   PASS_REGULAR_EXPRESSION "only apply to a compiled target and were ignored"
   FAIL_REGULAR_EXPRESSION "PRIVATE dependency must not be applied")
+
+# Library linkage selection (regression tests for issue #14). STATIC and SHARED are
+# mutually exclusive; passing both used to silently build SHARED instead of erroring
+# (executables already rejected the same contradiction). The "conflict" scenario passes
+# iff the FATAL_ERROR is emitted; the "shared" and "default" scenarios assert the
+# preserved behavior (SHARED -> SHARED_LIBRARY, no flag -> STATIC_LIBRARY) and halt with a
+# sentinel the harness matches.
+add_test(
+  NAME cpp_library_static_shared_conflict
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=conflict
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_conflict"
+)
+set_tests_properties(cpp_library_static_shared_conflict PROPERTIES
+  PASS_REGULAR_EXPRESSION "STATIC and SHARED cannot both be specified")
+
+add_test(
+  NAME cpp_library_shared_type
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=shared
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_shared"
+)
+set_tests_properties(cpp_library_shared_type PROPERTIES
+  PASS_REGULAR_EXPRESSION "SHARED_OK")
+
+add_test(
+  NAME cpp_library_default_type
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=default
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_default"
+)
+set_tests_properties(cpp_library_default_type PROPERTIES
+  PASS_REGULAR_EXPRESSION "DEFAULT_OK")
