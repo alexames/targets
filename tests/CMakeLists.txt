@@ -61,6 +61,19 @@ add_test(
 set_tests_properties(cpp_target_valid_visibility PROPERTIES
   PASS_REGULAR_EXPRESSION "VALID_OK")
 
+# Source grouping robustness (regression test for issue #6). A generated source/header in
+# an out-of-source build tree (outside SOURCE_DIR/HEADER_DIR) must not fail configuration:
+# source_group(TREE ...) errors on out-of-root files, so those files are grouped flat
+# instead. The build dir is a sibling of the source dir here, so the generated files are
+# genuinely out of root; configuration must complete cleanly (exit 0). Before the fix the
+# out-of-root source_group made configuration exit non-zero and this test fails.
+add_test(
+  NAME cpp_target_source_group_out_of_root
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_source_group"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_source_group"
+)
+
 # MSVC compile/link flag scoping (regression test for issue #5). /ZI must never be
 # injected as an unconditional (Release-reaching) option and /SAFESEH:NO must not reach
 # non-x86 architectures, while /utf-8 stays unconditional. A FATAL_ERROR in any assertion

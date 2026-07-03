@@ -74,6 +74,31 @@ function(_targets_parse_access_specifier RULE VAR_NAME)
   set(PRIVATE_${VAR_NAME} ${ACCESS_SPECIFIER_PRIVATE} PARENT_SCOPE)
 endfunction()
 
+# Partition absolute file paths into those located under ROOT and those outside it.
+# source_group(TREE ROOT FILES ...) is a hard configure error for any file that is not
+# under ROOT: this happens for generated files in an out-of-source build tree, or for
+# "../shared" sources (see issue #6). Callers keep such files out of the TREE grouping
+# and place them in a flat group instead. The two lists are returned in the caller's
+# UNDER_VAR and OUTSIDE_VAR; the file paths to classify are passed as trailing arguments.
+function(_targets_partition_files_by_root ROOT UNDER_VAR OUTSIDE_VAR)
+  get_filename_component(root_abs "${ROOT}" ABSOLUTE)
+  set(under "")
+  set(outside "")
+  foreach(file IN LISTS ARGN)
+    get_filename_component(file_abs "${file}" ABSOLUTE)
+    file(RELATIVE_PATH rel "${root_abs}" "${file_abs}")
+    # A file on a different drive keeps its absolute path; one above ROOT starts with
+    # "..". Either way it is not under ROOT and must skip source_group(TREE ...).
+    if(IS_ABSOLUTE "${rel}" OR rel STREQUAL ".." OR rel MATCHES "^\\.\\./")
+      list(APPEND outside "${file}")
+    else()
+      list(APPEND under "${file}")
+    endif()
+  endforeach()
+  set(${UNDER_VAR} "${under}" PARENT_SCOPE)
+  set(${OUTSIDE_VAR} "${outside}" PARENT_SCOPE)
+endfunction()
+
 # Main cpp_target function
 function(cpp_target)
   # Parse function arguments
@@ -162,9 +187,19 @@ function(cpp_target)
     endif()
   endforeach()
 
-  # Create source groups for IDE organization
+  # Create source groups for IDE organization. source_group(TREE ...) hard-errors on any
+  # file outside the tree root, so out-of-root sources (generated files in an out-of-source
+  # build tree, or ../shared sources) are collected into a flat "Generated Files" group
+  # instead of aborting configuration (see issue #6).
   if(sources)
-    source_group(TREE "${args_SOURCE_DIR}" PREFIX "Source Files" FILES ${sources})
+    _targets_partition_files_by_root(
+      "${args_SOURCE_DIR}" in_tree_sources out_of_tree_sources ${sources})
+    if(in_tree_sources)
+      source_group(TREE "${args_SOURCE_DIR}" PREFIX "Source Files" FILES ${in_tree_sources})
+    endif()
+    if(out_of_tree_sources)
+      source_group("Generated Files" FILES ${out_of_tree_sources})
+    endif()
   else()
     # If no sources provided, add a dummy file (for header-only or generated targets)
     set(dummy_file "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dummy.cpp")
@@ -184,9 +219,17 @@ function(cpp_target)
     endif()
   endforeach()
 
-  # Create header source groups
+  # Create header source groups. Out-of-root headers get the same flat "Generated Files"
+  # grouping as sources so a generated header never aborts configuration (see issue #6).
   if(headers)
-    source_group(TREE "${args_HEADER_DIR}" PREFIX "Header Files" FILES ${headers})
+    _targets_partition_files_by_root(
+      "${args_HEADER_DIR}" in_tree_headers out_of_tree_headers ${headers})
+    if(in_tree_headers)
+      source_group(TREE "${args_HEADER_DIR}" PREFIX "Header Files" FILES ${in_tree_headers})
+    endif()
+    if(out_of_tree_headers)
+      source_group("Generated Files" FILES ${out_of_tree_headers})
+    endif()
   endif()
 
   # Create the target
