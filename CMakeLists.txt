@@ -45,6 +45,13 @@ install(
     DESTINATION share/targets
 )
 
+# Install the license alongside the package config so the copyright ships with the
+# CMake install tree (the vcpkg port installs it separately via vcpkg_install_copyright).
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    DESTINATION share/targets
+)
+
 # Build examples
 if(TARGETS_BUILD_EXAMPLES)
     add_subdirectory(examples)
