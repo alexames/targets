@@ -276,7 +276,11 @@ function(flatbuffer_cpp_library)
     set(relative_path_from_root "")
   endif()
 
-  set(default_folder "${CMAKE_PROJECT_NAME}")
+  # Derive the namespace root from the *enclosing* project (PROJECT_NAME), not the
+  # top-level project (CMAKE_PROJECT_NAME), so an embedded schema library keeps the alias
+  # it has standalone. This mirrors cpp_target()'s derivation; keep the two consistent
+  # (see issue #8).
+  set(default_folder "${PROJECT_NAME}")
   if(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
     set(default_folder "${default_folder}/${relative_path_from_root}")
   endif()
@@ -287,9 +291,9 @@ function(flatbuffer_cpp_library)
 
   # Set IDE folder
   if(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
-    set_target_properties(${args_TARGET} PROPERTIES FOLDER "${CMAKE_PROJECT_NAME}/${relative_path_from_root}")
+    set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}/${relative_path_from_root}")
   else()
-    set_target_properties(${args_TARGET} PROPERTIES FOLDER "${CMAKE_PROJECT_NAME}")
+    set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}")
   endif()
 
   # Organize files in IDE

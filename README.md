@@ -235,7 +235,7 @@ unconditional entries) are kept; the rest are filtered out.
 ### Automatic namespace aliases
 
 Every target gets an alias derived from its location under `NAMESPACE_ROOT`
-(default `${PROJECT_SOURCE_DIR}/Source`) and the top-level project name:
+(default `${PROJECT_SOURCE_DIR}/Source`) and the enclosing project name:
 
 ```
 MyProject/
@@ -246,9 +246,11 @@ MyProject/
 
 produces the alias **`MyProject::Core::Engine`**, which you can link from anywhere.
 
-> Aliases and auto-import currently key off the *top-level* project name, so a library
-> embedded via `add_subdirectory`/`FetchContent` sees different aliases than when built
-> standalone ([#8](https://github.com/alexames/targets/issues/8)).
+The name comes from the *enclosing* `project()` (`PROJECT_NAME`), not the top-level
+project, so a library keeps the same aliases and IDE folders whether it is built
+standalone or embedded via `add_subdirectory`/`FetchContent`. Auto-import matching and the
+source/binary roots are likewise resolved per project rather than frozen to the first one
+configured ([#8](https://github.com/alexames/targets/issues/8)).
 
 ### `import_dependencies(<target> <dependencies>)`
 
