@@ -25,9 +25,11 @@ Then define your build targets:
     )
 
 Available functions:
-  - cpp_library()    : Define a C++ library
-  - cpp_binary()     : Define a C++ executable
-  - cpp_test()       : Define a C++ test (requires Google Test)
+  - cpp_library()            : Define a C++ library
+  - cpp_binary()             : Define a C++ executable
+  - cpp_test()               : Define a C++ test (requires Google Test)
   - flatbuffer_cpp_library() : Generate C++ from FlatBuffers schemas
+  - protobuf_cpp_library()   : Generate C++ from Protocol Buffers schemas
+  - grpc_cpp_library()       : Generate C++ + gRPC service stubs from Protocol Buffers
 
-See https://github.com/yourusername/targets for full documentation.
+See https://github.com/alexames/targets for full documentation.

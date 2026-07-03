@@ -354,14 +354,13 @@ cpp_library(
 # Before
 find_package(Flatbuffers REQUIRED)
 
+# flatbuffers_generate_headers() (from FlatBuffers' BuildFlatBuffers.cmake) creates the
+# MySchemas INTERFACE library, sets its generated-header include directory, and wires the
+# flatc generation step.
 flatbuffers_generate_headers(
     TARGET MySchemas
     SCHEMAS schemas/data.fbs
 )
-
-add_library(MySchemas INTERFACE)
-target_include_directories(MySchemas INTERFACE ${CMAKE_CURRENT_BINARY_DIR})
-add_dependencies(MySchemas MySchemas_generated)
 
 # After
 flatbuffer_cpp_library(
@@ -377,7 +376,8 @@ flatbuffer_cpp_library(
 
 2. **Prefer PUBLIC/PRIVATE**: Always specify PUBLIC or PRIVATE for includes, definitions, and dependencies.
 
-3. **Let Targets Auto-Discover**: Don't manually list every source file if they're in standard locations.
+3. **Set `SOURCE_DIR` / `HEADER_DIR`**: List sources and headers explicitly (Targets does
+   not glob), but set `SOURCE_DIR` / `HEADER_DIR` so those lists stay short relative paths.
 
 4. **Use FOLDER for Organization**: Set IDE folders to keep Solution Explorer clean.
 
@@ -386,7 +386,7 @@ flatbuffer_cpp_library(
    cpp_library(
        TARGET MyLargeLib
        SOURCES # ... many files ...
-       UNITY_BUILD ON
+       UNITY_BUILD               # flag — presence enables it; takes no value
        UNITY_BUILD_BATCH_SIZE 20
    )
    ```

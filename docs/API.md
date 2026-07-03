@@ -14,6 +14,9 @@ cpp_library(
     [WINDOWS_EXPORT_ALL_SYMBOLS]
     [SOURCES <file>...]
     [HEADERS <file>...]
+    [SOURCE_DIR <dir>]
+    [HEADER_DIR <dir>]
+    [NAMESPACE_ROOT <dir>]
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
     [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
     [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
@@ -26,7 +29,7 @@ cpp_library(
     [VERSION <version>]
     [SOVERSION <soversion>]
     [PRECOMPILE_HEADERS <header>...]
-    [UNITY_BUILD <ON|OFF>]
+    [UNITY_BUILD]
     [UNITY_BUILD_BATCH_SIZE <number>]
     [WARNINGS <off|default|strict>]
     [WERROR]
@@ -54,8 +57,17 @@ cpp_library(
 - **WINDOWS_EXPORT_ALL_SYMBOLS**: Flag — set the `WINDOWS_EXPORT_ALL_SYMBOLS` target property
   so a SHARED library auto-exports every symbol on Windows, as an alternative to annotating
   the API with `EXPORT_HEADER`'s macro. Mutually exclusive with `EXPORT_HEADER`.
-- **SOURCES**: List of source files (.cpp, .cc, .cxx, etc.)
-- **HEADERS**: List of header files (.h, .hpp, .hxx, etc.)
+- **SOURCES**: List of source files (.cpp, .cc, .cxx, etc.), resolved relative to
+  `SOURCE_DIR`. Targets does not glob — sources are always listed explicitly.
+- **HEADERS**: List of header files (.h, .hpp, .hxx, etc.), resolved relative to
+  `HEADER_DIR`.
+- **SOURCE_DIR**: Base directory for resolving relative `SOURCES` (default: the calling
+  `CMakeLists.txt` directory). Absolute source paths are used as-is.
+- **HEADER_DIR**: Base directory for resolving relative `HEADERS` (default:
+  `${CMAKE_CURRENT_LIST_DIR}/Include`, capital "I"). Absolute header paths are used as-is.
+- **NAMESPACE_ROOT**: Root directory for deriving the namespace alias and IDE folder
+  (default: `${PROJECT_SOURCE_DIR}/Source`). See
+  [Automatic Namespace Aliasing](#automatic-namespace-aliasing).
 - **INCLUDES**: Include directories. Every value must be prefixed with PUBLIC or
   PRIVATE; entries before the first keyword are rejected with a configure-time error
   - PUBLIC: Directories exported to consumers
@@ -87,7 +99,8 @@ cpp_library(
 - **VERSION**: Semantic version for the library (e.g., "1.2.3")
 - **SOVERSION**: ABI version number
 - **PRECOMPILE_HEADERS**: Headers to precompile for faster builds
-- **UNITY_BUILD**: Enable unity/jumbo builds (ON/OFF)
+- **UNITY_BUILD**: Flag — enable unity/jumbo builds. Its presence turns unity builds on;
+  it takes **no value** (do not write `UNITY_BUILD ON`).
 - **UNITY_BUILD_BATCH_SIZE**: Number of files per unity chunk (default: 16)
 - **WARNINGS**: Opt-in warning level — `off` | `default` | `strict`. `strict` maps to `/W4`
   (MSVC) or `-Wall -Wextra -Wpedantic` (GCC/Clang); `off` maps to `/W0` or `-w`; `default`
@@ -137,7 +150,7 @@ cpp_library(
     SOVERSION 1
     PRECOMPILE_HEADERS
         include/mymath/common.h
-    UNITY_BUILD ON
+    UNITY_BUILD
 )
 ```
 
@@ -264,7 +277,7 @@ cpp_binary(
     [WORKING_DIRECTORY <dir>]
     [COMMAND_ARGUMENTS <args>]
     [PRECOMPILE_HEADERS <header>...]
-    [UNITY_BUILD <ON|OFF>]
+    [UNITY_BUILD]
     [UNITY_BUILD_BATCH_SIZE <number>]
     [INSTALL]
     [EXPORT <export-set>]
@@ -401,7 +414,8 @@ flatbuffer_cpp_library(
 
 - **TARGET** (required): Name of the generated library target
 - **SCHEMAS** (required): List of .fbs schema files
-- **SCHEMA_ROOT_DIR**: Base directory for resolving schema includes
+- **SCHEMA_ROOT_DIR**: Base directory for resolving schema includes (default:
+  `${PROJECT_SOURCE_DIR}/Source`)
 - **INCLUDE_PREFIX**: Prefix for generated header paths
 - **BINARY_SCHEMAS_DIR**: Output directory for binary schema files (.bfbs)
 - **DEPENDENCIES**: Dependencies on other FlatBuffer schema targets
@@ -508,23 +522,19 @@ grpc_cpp_library(
 Automatically import subdirectories based on target namespace references.
 
 ```cmake
-import_dependencies(
-    TARGET <target>
-    DEPENDENCIES <dependency>...
-)
+import_dependencies(<target> <dependencies>)
 ```
 
-Parses dependency names like `MyProject::Core::Math` and automatically calls `add_subdirectory()` for the corresponding paths.
+This is a **positional** command — the target name followed by a (semicolon-separated)
+list of namespaced dependency labels, *not* a keyword-style call. It parses labels like
+`MyProject::Core::Math` and automatically calls `add_subdirectory()` for the corresponding
+paths (with circular-dependency detection). The core rules call it for you; it is also
+available directly.
 
 **Example:**
 
 ```cmake
-import_dependencies(
-    TARGET MyApp
-    DEPENDENCIES
-        MyProject::Core::Engine
-        MyProject::Rendering::Graphics
-)
+import_dependencies(MyApp "MyProject::Core::Engine;MyProject::Rendering::Graphics")
 # Automatically imports:
 #   - Core/CMakeLists.txt
 #   - Rendering/CMakeLists.txt
@@ -592,10 +602,16 @@ embed_binary(
     TARGET <name>
     FILES <file>...
     [NAMESPACE <namespace>]
+    [OUTPUT_DIR <dir>]
 )
 ```
 
-Generates a static library containing binary data accessible from C++.
+Generates a **STATIC** library that exposes each embedded file as a `<file>_data[]` byte
+array and a `<file>_size`. **NAMESPACE** (default `embedded`) wraps the declarations;
+**OUTPUT_DIR** overrides where the generated `.h`/`.cpp` are written (default: a per-target
+subdirectory of `CMAKE_CURRENT_BINARY_DIR`). This is a deliberately basic implementation —
+for heavier production embedding consider
+[CMakeRC](https://github.com/vector-of-bool/cmrc).
 
 **Example:**
 
@@ -722,13 +738,18 @@ cpp_library(
 opens a section as usual; it escapes itself too (`LITERAL LITERAL` yields a literal
 `LITERAL`); and a trailing `LITERAL` with nothing after it is a configure-time error.
 
-### Source Auto-Discovery
+### Source and header base directories
 
-By default, Targets looks for:
-- Sources in `CMAKE_CURRENT_LIST_DIR`
-- Headers in `CMAKE_CURRENT_LIST_DIR/Include`
+Targets does **not** glob or auto-discover source files — you always list `SOURCES` and
+`HEADERS` explicitly. Relative entries in those lists are resolved against a base directory:
 
-You can override with explicit SOURCES and HEADERS lists.
+- `SOURCES` resolve relative to **`SOURCE_DIR`** (default: the calling `CMakeLists.txt`
+  directory, `CMAKE_CURRENT_LIST_DIR`).
+- `HEADERS` resolve relative to **`HEADER_DIR`** (default:
+  `${CMAKE_CURRENT_LIST_DIR}/Include`, capital "I").
+
+Pass `SOURCE_DIR` / `HEADER_DIR` to change those bases; an absolute path in `SOURCES` /
+`HEADERS` is used as-is.
 
 ### IDE Integration
 
