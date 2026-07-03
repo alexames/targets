@@ -11,7 +11,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(ConsumeTargetsPort LANGUAGES CXX)
 
-find_package(Targets CONFIG REQUIRED)
+# Pin the advertised version to lock in the version-consistency fix (issue #11): the port
+# installs a TargetsConfigVersion.cmake generated from project(VERSION 0.9.0), so requiring
+# 0.9.0 must succeed. This regresses if the version sources drift back out of sync.
+find_package(Targets 0.9.0 CONFIG REQUIRED)
 
 cpp_library(
   TARGET Greeter

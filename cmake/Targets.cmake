@@ -1,5 +1,5 @@
 # Targets - Modern CMake Build Abstraction
-# Version: 0.1.0
+# Version: see cmake/TargetsVersion.cmake (single source of truth)
 # Homepage: https://github.com/yourusername/targets
 # License: MIT
 
@@ -19,6 +19,9 @@ get_filename_component(TARGETS_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 # Add to module path
 list(APPEND CMAKE_MODULE_PATH "${TARGETS_CMAKE_DIR}")
 
+# Version (single source of truth, shared with the root CMakeLists project() call)
+include("${TARGETS_CMAKE_DIR}/TargetsVersion.cmake")
+
 # Include core modules
 include("${TARGETS_CMAKE_DIR}/core/cpp_target.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_library.cmake")
@@ -36,4 +39,4 @@ include("${TARGETS_CMAKE_DIR}/codegen/flatbuffer_cpp_library.cmake")
 include("${TARGETS_CMAKE_DIR}/utils/set_folder_for_targets.cmake")
 include("${TARGETS_CMAKE_DIR}/utils/embed_binary.cmake")
 
-message(STATUS "Targets: Modern CMake build abstraction loaded (version 0.1.0)")
+message(STATUS "Targets: Modern CMake build abstraction loaded (version ${TARGETS_VERSION})")

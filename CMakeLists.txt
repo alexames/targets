@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Single source of truth for the version (also read by cmake/Targets.cmake). Included
+# before project() so it can supply the VERSION below. See cmake/TargetsVersion.cmake.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/TargetsVersion.cmake")
+
 project(Targets
-    VERSION 0.4.0
+    VERSION ${TARGETS_VERSION}
     DESCRIPTION "Modern CMake build abstraction library"
     LANGUAGES NONE
 )
