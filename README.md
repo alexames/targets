@@ -710,7 +710,9 @@ Development is tracked in the
 
 Issues and pull requests are welcome. Please open an issue to discuss substantial
 changes first, and include a test (a configure-mode CMake test or an example) with
-behavioral changes.
+behavioral changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide — build and
+test commands, branch naming, and coding conventions — and [CHANGELOG.md](CHANGELOG.md)
+for the release history.
 
 ## License
 
