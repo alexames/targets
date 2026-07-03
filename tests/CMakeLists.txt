@@ -648,3 +648,29 @@ add_test(
 )
 set_tests_properties(cpp_test_bad_size PROPERTIES
   PASS_REGULAR_EXPRESSION "is not a valid size")
+
+# Empty-suite guard (issue #28). A cpp_test whose binary registers zero GoogleTest cases must
+# make `ctest` fail rather than silently pass. Because discovery is a build-time step, cpp_test
+# emits the zero-count check into the generated CTest include file that CTest runs at test time;
+# the "no_tests_guard" scenario asserts that file registers an always-failing test (its
+# EXISTENCE, so CI stays green), and "allow_no_tests" asserts ALLOW_NO_TESTS suppresses the guard
+# while still applying per-test properties. Each halts with a sentinel matched below.
+add_test(
+  NAME cpp_test_no_tests_guard
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=no_tests_guard
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_no_tests_guard"
+)
+set_tests_properties(cpp_test_no_tests_guard PROPERTIES
+  PASS_REGULAR_EXPRESSION "NO_TESTS_GUARD_OK")
+
+add_test(
+  NAME cpp_test_allow_no_tests
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=allow_no_tests
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_attributes"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_attributes_allow_no_tests"
+)
+set_tests_properties(cpp_test_allow_no_tests PROPERTIES
+  PASS_REGULAR_EXPRESSION "ALLOW_NO_TESTS_OK")

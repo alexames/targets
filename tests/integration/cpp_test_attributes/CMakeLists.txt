@@ -26,7 +26,8 @@ enable_testing()
 
 if(NOT DEFINED SCENARIO)
   message(FATAL_ERROR
-    "This test project requires -DSCENARIO=<timeout|size|size_override|labels|args|data_workdir|bad_size>")
+    "This test project requires -DSCENARIO=<timeout|size|size_override|labels|args|data_workdir|"
+    "arg_order|bad_size|no_tests_guard|allow_no_tests>")
 endif()
 
 # Stub Google Test so cpp_test() runs network- and compiler-free (as cpp_test_folder does):
@@ -71,6 +72,20 @@ function(_expect_props_file target needle)
   file(READ "${_pf}" _c)
   if(NOT "${_c}" MATCHES "${needle}")
     message(FATAL_ERROR "${SCENARIO}: expected props file to match '${needle}', got:\n${_c}")
+  endif()
+endfunction()
+
+# Assert the generated per-test property include file for TARGET does NOT contain NEEDLE (an
+# absent file trivially satisfies this). Used to prove ALLOW_NO_TESTS suppresses the empty-suite
+# guard while still emitting any per-test properties.
+function(_expect_props_file_no_match target needle)
+  set(_pf "${CMAKE_CURRENT_BINARY_DIR}/${target}_cpp_test_props.cmake")
+  if(NOT EXISTS "${_pf}")
+    return()
+  endif()
+  file(READ "${_pf}" _c)
+  if("${_c}" MATCHES "${needle}")
+    message(FATAL_ERROR "${SCENARIO}: props file must NOT match '${needle}', got:\n${_c}")
   endif()
 endfunction()
 
@@ -147,6 +162,44 @@ elseif(SCENARIO STREQUAL "arg_order")
   _expect_props_file(OrderTest "LABELS \"unit;fast\"")
   _expect_match("EXTRA_ARGS;--shuffle")
   message(FATAL_ERROR "ARG_ORDER_OK")
+
+elseif(SCENARIO STREQUAL "no_tests_guard")
+  # Empty-suite guard (issue #28), on by default. gtest_discover_tests populates the discovered
+  # test list at BUILD time, so cpp_test cannot count tests at configure time; instead it emits
+  # the count check into the generated CTest include file, which CTest runs at test time. Assert
+  # that file registers an always-failing test in the empty branch (via the generated probe
+  # script) so a binary that reports zero cases turns `ctest` red instead of silently passing.
+  cpp_test(TARGET EmptyGuardTest SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}" SOURCES "${_src}")
+  _expect_props_file(EmptyGuardTest "else\\(\\)")
+  # CTest's script-scope add_test only accepts the classic positional form (name first, no
+  # NAME/COMMAND keywords); assert the guard is emitted that way.
+  _expect_props_file(EmptyGuardTest "add_test\\(EmptyGuardTest_no_tests_registered")
+  _expect_props_file(EmptyGuardTest "EmptyGuardTest_no_tests_probe\\.cmake")
+  # The probe the failing test runs must exist and carry a clear zero-cases diagnostic.
+  set(_probe "${CMAKE_CURRENT_BINARY_DIR}/EmptyGuardTest_no_tests_probe.cmake")
+  if(NOT EXISTS "${_probe}")
+    message(FATAL_ERROR "no_tests_guard: expected probe script '${_probe}' was not generated")
+  endif()
+  file(READ "${_probe}" _pc)
+  if(NOT "${_pc}" MATCHES "registered zero GoogleTest cases")
+    message(FATAL_ERROR "no_tests_guard: probe script lacks the zero-cases diagnostic:\n${_pc}")
+  endif()
+  message(FATAL_ERROR "NO_TESTS_GUARD_OK")
+
+elseif(SCENARIO STREQUAL "allow_no_tests")
+  # ALLOW_NO_TESTS opts out of the empty-suite guard for a deliberately test-free binary. The
+  # guard (its else()/add_test branch) must be absent, while per-test properties (LABELS here)
+  # are still applied -- proving the opt-out suppresses ONLY the guard, not property application.
+  cpp_test(TARGET AllowEmptyTest SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}" SOURCES "${_src}"
+    LABELS unit ALLOW_NO_TESTS)
+  _expect_props_file(AllowEmptyTest "LABELS \"unit\"")
+  _expect_props_file_no_match(AllowEmptyTest "AllowEmptyTest_no_tests_registered")
+  _expect_props_file_no_match(AllowEmptyTest "else\\(\\)")
+  # With the guard off, no probe script is generated.
+  if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/AllowEmptyTest_no_tests_probe.cmake")
+    message(FATAL_ERROR "allow_no_tests: probe script must not be generated under ALLOW_NO_TESTS")
+  endif()
+  message(FATAL_ERROR "ALLOW_NO_TESTS_OK")
 
 elseif(SCENARIO STREQUAL "bad_size")
   # An unknown SIZE must fail fast with a clear message.

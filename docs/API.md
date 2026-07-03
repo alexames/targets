@@ -320,6 +320,7 @@ cpp_test(
     [TIMEOUT <seconds>]
     [LABELS <label>...]
     [ARGS <arg>...]
+    [ALLOW_NO_TESTS]
 )
 ```
 
@@ -344,6 +345,12 @@ Enable testing at your **top-level** `CMakeLists.txt` with `enable_testing()` or
 - **DATA**: The files a test opens at run time; staged next to the test binary. Unless
   `WORKING_DIRECTORY` is given explicitly, the discovered tests run from the binary's directory
   so `DATA` is found via a relative path.
+- **ALLOW_NO_TESTS**: Opt out of the empty-suite guard. By default, a test binary that registers
+  **zero** GoogleTest cases makes `ctest` fail (via an always-failing
+  `<target>_no_tests_registered` test) rather than silently passing — this catches sources with
+  no `TEST()`/`TEST_F()`, a `--gtest_filter` that matched nothing, or a mislink that dropped the
+  test-registration translation unit. Pass `ALLOW_NO_TESTS` for a target that is intentionally
+  test-free.
 
 **Example:**
 
