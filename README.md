@@ -79,7 +79,8 @@ cpp_binary(
   (`CXX_STANDARD 23`, `CXX_STANDARD_REQUIRED ON`, `CXX_EXTENSIONS OFF`). Pass
   `CXX_STANDARD <n>` to any rule to select an older standard per target.
 - Optional, per feature: **Google Test** (for `cpp_test`; auto-fetched if absent),
-  **FlatBuffers** (for `flatbuffer_cpp_library`).
+  **FlatBuffers** (for `flatbuffer_cpp_library`), **Protocol Buffers** (for
+  `protobuf_cpp_library`) and **gRPC** (for `grpc_cpp_library`).
 
 ## Getting started
 
@@ -477,6 +478,41 @@ flatbuffer_cpp_library(
 Requires a `flatc` compiler (from vcpkg's `flatbuffers` or FetchContent). Default flatc
 flags are `--scoped-enums --gen-object-api --keep-prefix`.
 
+### `protobuf_cpp_library` / `grpc_cpp_library`
+
+Generates C++ from Protocol Buffers schemas and wraps the result in a linkable library.
+`protobuf_cpp_library` emits the message sources (`*.pb.cc` / `*.pb.h`) and links
+`protobuf::libprotobuf`; `grpc_cpp_library` additionally runs the gRPC C++ plugin to emit
+service stubs (`*.grpc.pb.cc` / `*.grpc.pb.h`) and links `gRPC::grpc++`.
+
+```cmake
+find_package(Protobuf REQUIRED)
+
+protobuf_cpp_library(
+    TARGET AddressBookProtos
+    PROTOS proto/addressbook.proto
+    PROTO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto"  # -I root; output layout base
+    IMPORT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/vendor"    # extra protoc -I dirs
+    DEPENDENCIES CommonProtos                           # other proto library targets
+    FLAGS --experimental_allow_proto3_optional          # extra protoc flags
+)
+
+find_package(gRPC REQUIRED)
+
+grpc_cpp_library(
+    TARGET GreeterServices
+    PROTOS proto/greeter.proto
+    DEPENDENCIES AddressBookProtos
+)
+```
+
+Requires `protoc` (from vcpkg's `protobuf` or any `find_package(Protobuf)`) and, for
+`grpc_cpp_library`, the gRPC C++ plugin (from `find_package(gRPC)`). Both tools are resolved
+at the point of use, so `include(Targets)` stays side-effect free for projects that never
+call these rules. Proto files must live under `PROTO_ROOT_DIR`; a dependent proto library
+picks up its dependencies' proto roots automatically so cross-file `import` statements
+resolve.
+
 ## Utilities
 
 ### `set_folder_for_targets(FOLDER <path> TARGETS <t>...)`
@@ -514,7 +550,8 @@ targets/
 │   │   ├── import_dependencies.cmake  # namespace-based subdirectory import
 │   │   └── find_targets.cmake         # recursive target discovery
 │   ├── codegen/
-│   │   └── flatbuffer_cpp_library.cmake
+│   │   ├── flatbuffer_cpp_library.cmake
+│   │   └── protobuf_cpp_library.cmake  # protobuf_cpp_library + grpc_cpp_library
 │   └── utils/
 │       ├── set_folder_for_targets.cmake
 │       └── embed_binary.cmake

@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package targets.test;
+
+message Example {
+  int32 id = 1;
+  string name = 2;
+}

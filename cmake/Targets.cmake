@@ -35,6 +35,7 @@ include("${TARGETS_CMAKE_DIR}/dependencies/find_targets.cmake")
 
 # Include code generation
 include("${TARGETS_CMAKE_DIR}/codegen/flatbuffer_cpp_library.cmake")
+include("${TARGETS_CMAKE_DIR}/codegen/protobuf_cpp_library.cmake")
 
 # Include utilities
 include("${TARGETS_CMAKE_DIR}/utils/set_folder_for_targets.cmake")

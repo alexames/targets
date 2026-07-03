@@ -14,3 +14,9 @@ find_package(Flatbuffers QUIET)
 if(Flatbuffers_FOUND OR TARGET flatbuffers::flatc OR TARGET flatc)
     add_subdirectory(codegen_flatbuffers)
 endif()
+
+# Add Protobuf example if Protocol Buffers is available
+find_package(Protobuf QUIET)
+if(Protobuf_FOUND OR TARGET protobuf::libprotobuf)
+    add_subdirectory(codegen_protobuf)
+endif()
