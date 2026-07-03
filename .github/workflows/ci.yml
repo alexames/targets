@@ -36,6 +36,13 @@ jobs:
         uses: lukka/get-cmake@latest
 
       - name: Configure CMake
+        env:
+          # run-vcpkg@v11 defaults VCPKG_BINARY_SOURCES to "clear;x-gha,readwrite", but the
+          # x-gha provider needs ACTIONS_CACHE_URL/ACTIONS_RUNTIME_TOKEN, which current GitHub
+          # runners no longer expose (the classic Actions cache service was decommissioned).
+          # That made `vcpkg install` hard-fail at project(). Disable remote binary caching so
+          # dependencies build from source. Step-level env overrides what run-vcpkg exported.
+          VCPKG_BINARY_SOURCES: clear
         run: cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DTARGETS_BUILD_EXAMPLES=ON -DTARGETS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
 
       - name: Build Examples
@@ -101,6 +108,10 @@ jobs:
       # consumer that calls find_package(Targets CONFIG REQUIRED). This fails if the port
       # ever regresses to installing a layout that find_package cannot resolve (issue #2).
       - name: Configure consumer against the overlay port
+        env:
+          # See the Build Examples job: disable the broken x-gha binary cache so vcpkg installs
+          # the overlay port (and its host tools) by building from source instead of failing.
+          VCPKG_BINARY_SOURCES: clear
         run: cmake -B build-consume -S tests/consume_port -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_OVERLAY_PORTS="${{ github.workspace }}/ports" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build consumer
