@@ -481,7 +481,11 @@ cpp_library(
 ```
 
 The current build platform is auto-detected. Entries for the active platform (plus all
-unconditional entries) are kept; the rest are filtered out.
+unconditional entries) are kept; the rest are filtered out. A specific platform bucket
+takes precedence over `DEFAULT`. For the visibility-carrying lists (`INCLUDES`,
+`DEFINITIONS`, `DEPENDENCIES`, `COPTS`, `LINKOPTS`) the `PUBLIC`/`PRIVATE` keyword is
+parsed first, so a sentinel applies within its enclosing visibility group — in the example
+above `ws2_32` is a **PUBLIC** dependency that is only linked on Windows.
 
 ### Escaping a literal sentinel value
 

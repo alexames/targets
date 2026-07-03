@@ -267,7 +267,15 @@ cpp_library(
 
 #### Pattern: Platform-Specific Code
 
+Don't build lists with `if(WIN32)/elseif(UNIX)` before the call. `SOURCES`, `HEADERS`,
+`INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`, `COPTS`, `LINKOPTS`, and `DATA` accept inline
+**platform buckets** — list unconditional entries first, then group the rest under a
+`WINDOWS`, `LINUX`, `MACOS`, `ANDROID`, `EMSCRIPTEN`, or `DEFAULT` sentinel. Targets keeps
+the unconditional entries plus the ones for the active platform (falling back to `DEFAULT`
+when no specific platform matches).
+
 ```cmake
+# Before
 set(SOURCES src/common.cpp)
 
 if(WIN32)
@@ -280,9 +288,49 @@ cpp_library(
     TARGET MyLib
     SOURCES ${SOURCES}
 )
+
+# After
+cpp_library(
+    TARGET MyLib
+    SOURCES
+        src/common.cpp        # every platform
+        WINDOWS src/windows.cpp
+        LINUX   src/unix.cpp
+        DEFAULT src/generic.cpp   # any other platform
+)
 ```
 
+The same buckets work for platform-specific dependencies and definitions. For the
+visibility-carrying lists the `PUBLIC`/`PRIVATE` keyword comes first and the sentinels
+apply inside that group:
+
+```cmake
+# Before
+target_link_libraries(MyLib PUBLIC fmt::fmt)
+if(WIN32)
+    target_link_libraries(MyLib PUBLIC ws2_32)
+endif()
+
+# After
+cpp_library(
+    TARGET MyLib
+    SOURCES src/mylib.cpp
+    DEPENDENCIES
+        PUBLIC  fmt::fmt        # every platform
+        WINDOWS ws2_32          # Windows only, still PUBLIC
+)
+```
+
+If a value is *literally* one of the reserved sentinel words (for instance a definition
+named `WINDOWS`), escape it with the `LITERAL` marker: `DEFINITIONS PUBLIC LITERAL WINDOWS`
+defines the macro `WINDOWS` on every platform. See
+[Platform-conditional entries](API.md#platform-conditional-entries) in the API reference
+for the full rules.
+
 #### Pattern: Conditional Dependencies
+
+Platform buckets cover platform conditions; for a *feature flag* (a project option that is
+not platform-based), building the list with `if()` beforehand is still the right approach:
 
 ```cmake
 set(DEPS fmt::fmt)
