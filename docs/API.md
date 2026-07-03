@@ -10,6 +10,8 @@ Define a C++ library target.
 cpp_library(
     TARGET <name>
     [STATIC | SHARED]
+    [EXPORT_HEADER]
+    [WINDOWS_EXPORT_ALL_SYMBOLS]
     [SOURCES <file>...]
     [HEADERS <file>...]
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
@@ -35,6 +37,16 @@ cpp_library(
   default (or with an explicit `STATIC`) and SHARED with `SHARED`. The two are mutually
   exclusive — passing both is a configure-time error. Ignored when the target resolves to
   a header-only INTERFACE library (HEADERS but no SOURCES).
+- **EXPORT_HEADER**: Flag — run CMake's `GenerateExportHeader` for this target, producing a
+  `<target>_export.h` (defining the `<TARGET>_EXPORT` macro) on the target's PUBLIC include
+  path, and set `CXX_VISIBILITY_PRESET hidden` / `VISIBILITY_INLINES_HIDDEN`. This is how a
+  SHARED library exports symbols portably (on MSVC it populates the import library so
+  consumers can link). See the **SHARED libraries on Windows** subsection below. Mutually
+  exclusive with `WINDOWS_EXPORT_ALL_SYMBOLS`; rejected on executables; ignored with a warning
+  on a header-only INTERFACE library.
+- **WINDOWS_EXPORT_ALL_SYMBOLS**: Flag — set the `WINDOWS_EXPORT_ALL_SYMBOLS` target property
+  so a SHARED library auto-exports every symbol on Windows, as an alternative to annotating
+  the API with `EXPORT_HEADER`'s macro. Mutually exclusive with `EXPORT_HEADER`.
 - **SOURCES**: List of source files (.cpp, .cc, .cxx, etc.)
 - **HEADERS**: List of header files (.h, .hpp, .hxx, etc.)
 - **INCLUDES**: Include directories. Every value must be prefixed with PUBLIC or
@@ -105,9 +117,45 @@ arguments applies:
   usage-requirements), `CXX_STANDARD` (as an interface feature requirement), `FOLDER`, and
   `PROPERTIES`.
 - **Ignored with a warning:** the **PRIVATE** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`,
-  `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, and `UNITY_BUILD`. These only apply to a
-  compiled target; supplying them emits a configure-time warning naming each ignored
-  argument rather than dropping them silently.
+  `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`, `EXPORT_HEADER`, and
+  `WINDOWS_EXPORT_ALL_SYMBOLS`. These only apply to a compiled target; supplying them emits a
+  configure-time warning naming each ignored argument rather than dropping them silently.
+
+**SHARED libraries on Windows:**
+
+A SHARED library needs its symbols exported and its DLL staged next to any executable that
+loads it; Targets handles both.
+
+- **`EXPORT_HEADER`** runs CMake's `GenerateExportHeader` for the target, producing a
+  `<target>_export.h` that defines a `<TARGET>_EXPORT` macro (expanding to
+  `__declspec(dllexport)` while the library builds, `__declspec(dllimport)` for consumers, and
+  default visibility on GCC/Clang). The header's directory is added to the target's **PUBLIC**
+  include path, so both the library and its consumers can `#include "<target>_export.h"` and
+  annotate the public API. `EXPORT_HEADER` also sets `CXX_VISIBILITY_PRESET hidden` and
+  `VISIBILITY_INLINES_HIDDEN` for parity: non-Windows toolchains then hide unannotated symbols
+  just as MSVC does. When the library is also installed (`INSTALL`/`EXPORT`), the generated
+  header is installed alongside the public headers, so exported SHARED libraries still compile
+  downstream.
+
+  ```cmake
+  cpp_library(TARGET Greeter SHARED SOURCES src/greeter.cpp INCLUDES PUBLIC include/ EXPORT_HEADER)
+  ```
+  ```cpp
+  #include "greeter_export.h"
+  GREETER_EXPORT std::string greeting();   // GREETER_EXPORT == <TARGET>_EXPORT
+  ```
+
+- **`WINDOWS_EXPORT_ALL_SYMBOLS`** is the annotation-free alternative: it sets the CMake target
+  property of the same name so a SHARED library auto-exports every symbol on Windows. It and
+  `EXPORT_HEADER` are mutually exclusive (passing both is a configure-time error).
+
+- **DLL staging** is automatic for every `cpp_binary`: after each build, the runtime DLLs of
+  the executable's shared-library dependencies are copied next to it (via
+  `$<TARGET_RUNTIME_DLLS>`), so it launches from the build tree without manual copying or
+  `PATH` changes. It is a no-op on Linux/macOS (shared objects are found via the build-tree
+  RPATH) and for executables with no shared dependencies. `$<TARGET_RUNTIME_DLLS>` requires
+  **CMake ≥ 3.21**; on older CMake staging is skipped. Set `-DTARGETS_STAGE_RUNTIME_DLLS=OFF`
+  to disable it globally.
 
 **Installing & exporting libraries:**
 

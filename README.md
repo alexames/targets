@@ -42,6 +42,7 @@ cpp_binary(
   - [`cpp_test`](#cpp_test)
   - [Common arguments](#common-arguments)
 - [Installing & exporting libraries](#installing--exporting-libraries)
+- [SHARED libraries on Windows](#shared-libraries-on-windows)
 - [Platform-conditional entries](#platform-conditional-entries)
 - [Dependency management & namespaces](#dependency-management--namespaces)
 - [Code generation](#code-generation)
@@ -207,6 +208,8 @@ no-op — it creates no target and never acquires Google Test.
 | `UNITY_BUILD` | all | **Flag** — enable unity/jumbo build (presence = on). |
 | `UNITY_BUILD_BATCH_SIZE` | all | Files per unity chunk (default 16). |
 | `STATIC` / `SHARED` | `cpp_library` | **Flags** — library linkage (default STATIC); mutually exclusive, passing both errors. |
+| `EXPORT_HEADER` | `cpp_library` | **Flag** — generate a `<target>_export.h` (via `GenerateExportHeader`) exposing a `<TARGET>_EXPORT` macro, and set hidden-visibility defaults. See [SHARED libraries on Windows](#shared-libraries-on-windows). |
+| `WINDOWS_EXPORT_ALL_SYMBOLS` | `cpp_library` | **Flag** — auto-export every symbol of a SHARED library (alternative to `EXPORT_HEADER`; the two are mutually exclusive). |
 | `VERSION` / `SOVERSION` | `cpp_library` | Library version / ABI version. |
 | `INSTALL` | `cpp_library`, `cpp_binary` | **Flag** — generate install/export rules (see [Installing & exporting](#installing--exporting-libraries)). |
 | `EXPORT` | `cpp_library`, `cpp_binary` | Export-set name for the installed target (implies `INSTALL`; default `<Project>Targets`). |
@@ -263,6 +266,50 @@ consumed via `find_package`. Several libraries can share one `EXPORT` set. `cpp_
 accepts `INSTALL`/`EXPORT` too. A worked end-to-end example lives in
 [`examples/install_export`](examples/install_export); a downstream consumer is in
 [`tests/consume_install`](tests/consume_install).
+
+## SHARED libraries on Windows
+
+A `SHARED` library needs two things a static one doesn't, and Targets wires both up for you:
+
+**1. Exported symbols.** On Windows/MSVC a symbol is only visible to consumers if it is
+marked `__declspec(dllexport)`; without that the import library is empty and downstream code
+fails to link. Add **`EXPORT_HEADER`** and Targets runs CMake's
+[`GenerateExportHeader`](https://cmake.org/cmake/help/latest/module/GenerateExportHeader.html)
+for the target, producing a `<target>_export.h` (in the build tree, on the target's **PUBLIC**
+include path) that defines a `<TARGET>_EXPORT` macro. It expands to `dllexport` while the
+library builds, `dllimport` when a consumer links it, and default visibility on GCC/Clang —
+so annotating your public API works identically everywhere. `EXPORT_HEADER` also sets
+`CXX_VISIBILITY_PRESET hidden` / `VISIBILITY_INLINES_HIDDEN` so non-Windows toolchains hide
+unannotated symbols too, matching MSVC.
+
+```cmake
+cpp_library(TARGET Greeter SHARED SOURCES src/greeter.cpp INCLUDES PUBLIC include/ EXPORT_HEADER)
+```
+
+```cpp
+// greeter.h
+#include "greeter_export.h"          // generated; on the PUBLIC include path
+GREETER_EXPORT std::string greeting();   // GREETER_EXPORT = <TARGET>_EXPORT
+```
+
+As an alternative, **`WINDOWS_EXPORT_ALL_SYMBOLS`** auto-exports every symbol (setting the
+CMake target property of the same name) so no annotations are needed. It and `EXPORT_HEADER`
+are mutually exclusive — passing both is a configure-time error. When a SHARED library also
+uses `INSTALL`/`EXPORT`, the generated export header is installed alongside the public headers,
+so downstream consumers still compile.
+
+**2. DLL staging.** A produced `.dll` must sit next to the executable that loads it (or be on
+`PATH`) or the process won't start. Targets copies the runtime DLLs of each `cpp_binary`'s
+shared-library dependencies next to the executable after every build (via
+`$<TARGET_RUNTIME_DLLS>`), so running or debugging straight from the build tree just works —
+no manual copying, no `PATH` juggling. It is a no-op on Linux/macOS (which resolve shared
+objects through the build-tree RPATH) and for executables with no shared dependencies. This
+uses `$<TARGET_RUNTIME_DLLS>`, which requires **CMake ≥ 3.21**; on older CMake it is skipped.
+Disable it globally with `-DTARGETS_STAGE_RUNTIME_DLLS=OFF`.
+
+A worked example (SHARED library + executable that links and runs it) lives in
+[`examples/shared_library`](examples/shared_library); CI builds **and runs** it on
+windows-latest, proving both the export and the staging.
 
 ## Platform-conditional entries
 
@@ -431,9 +478,14 @@ ctest --test-dir build --output-on-failure
 
 Options: `TARGETS_BUILD_EXAMPLES` (default ON), `TARGETS_BUILD_TESTS` (default ON).
 
-Consumer-facing option: `TARGETS_MSVC_EDIT_AND_CONTINUE` (default ON) controls whether
-MSVC targets get `/ZI` (edit-and-continue debug info) in Debug builds on x86/x64. It is
-never applied to Release or ARM64; set it to `OFF` to suppress `/ZI` entirely.
+Consumer-facing options:
+
+- `TARGETS_MSVC_EDIT_AND_CONTINUE` (default ON) controls whether MSVC targets get `/ZI`
+  (edit-and-continue debug info) in Debug builds on x86/x64. It is never applied to Release
+  or ARM64; set it to `OFF` to suppress `/ZI` entirely.
+- `TARGETS_STAGE_RUNTIME_DLLS` (default ON) controls whether each `cpp_binary` copies its
+  shared-library dependency DLLs next to the executable after building (Windows). Set it to
+  `OFF` to suppress DLL staging. See [SHARED libraries on Windows](#shared-libraries-on-windows).
 
 The test suite currently includes script-mode unit tests for the platform parser
 (`tests/unit/`). Broader integration coverage is planned
@@ -444,8 +496,6 @@ The test suite currently includes script-mode unit tests for the platform parser
 Development is tracked in the
 [issue tracker](https://github.com/alexames/targets/issues). Highlights on the roadmap:
 
-- SHARED-library ergonomics on Windows (export headers, DLL staging)
-  ([#21](https://github.com/alexames/targets/issues/21)).
 - Pluggable test frameworks and lazy GTest acquisition
   ([#22](https://github.com/alexames/targets/issues/22),
   [#3](https://github.com/alexames/targets/issues/3)).
