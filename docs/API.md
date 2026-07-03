@@ -66,6 +66,10 @@ cpp_library(
   PRIVATE
   - PUBLIC: Dependencies exported to consumers
   - PRIVATE: Dependencies only for building this target
+- `SOURCES`, `HEADERS`, `INCLUDES`, `DEFINITIONS`, and `DEPENDENCIES` (like `COPTS`,
+  `LINKOPTS`, and `DATA`) accept inline **platform-conditional entries** — `WINDOWS`,
+  `LINUX`, `MACOS`, `ANDROID`, `EMSCRIPTEN`, and `DEFAULT` buckets. See
+  [Platform-conditional entries](#platform-conditional-entries) under Advanced Features.
 - **COPTS**: Raw compile options (translated to `target_compile_options`). Every value must
   be prefixed with PUBLIC or PRIVATE, and the same platform buckets as `DEFINITIONS` apply.
   PUBLIC options propagate to consumers (`INTERFACE_COMPILE_OPTIONS`); PRIVATE options apply
@@ -645,6 +649,76 @@ The access keyword is **required**: every value of `INCLUDES`, `DEFINITIONS`, an
 `DEPENDENCIES` must appear under a `PUBLIC` or `PRIVATE` keyword. Values placed before
 the first keyword are rejected with a configure-time error rather than silently
 dropped.
+
+### Platform-conditional entries
+
+The list arguments `SOURCES`, `HEADERS`, `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`,
+`COPTS`, `LINKOPTS`, and `DATA` support inline platform filtering, so a single call can
+describe a target across platforms without a surrounding `if(WIN32)/elseif(UNIX)` block.
+The current build platform is auto-detected at configure time and only the matching
+entries are kept.
+
+Within any of those lists, entries are grouped by **platform sentinel** tokens:
+
+| Sentinel | Selected when |
+|---|---|
+| `WINDOWS` | `WIN32` |
+| `LINUX` | not Windows/Android/Emscripten/Apple (the default Unix case) |
+| `MACOS` | `APPLE` |
+| `ANDROID` | `ANDROID` |
+| `EMSCRIPTEN` | `EMSCRIPTEN` |
+| `DEFAULT` | no sentinel above matches the current platform |
+
+Token rules:
+
+- Entries listed **before any sentinel** are *unconditional* — always kept.
+- After a sentinel, entries belong to that platform's bucket until the next sentinel, so
+  unconditional entries must come first.
+- The output is the unconditional entries plus the current platform's bucket if that
+  platform was listed, otherwise the `DEFAULT` bucket if one was given, otherwise nothing
+  for that argument.
+- A specific platform bucket always wins over `DEFAULT` when both match.
+
+For the visibility-carrying lists (`INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`, `COPTS`,
+`LINKOPTS`), the `PUBLIC`/`PRIVATE` keyword is parsed first, so the sentinels appear
+*inside* a visibility group and only affect that group. `SOURCES`, `HEADERS`, and `DATA`
+carry no visibility, so their sentinels appear at the top level.
+
+```cmake
+cpp_library(
+    TARGET Platform
+    SOURCES
+        common.cpp              # always compiled
+        WINDOWS   win32.cpp
+        LINUX     posix.cpp
+        MACOS     posix.cpp cocoa.mm
+        DEFAULT   stub.cpp      # any platform not listed above
+    DEPENDENCIES
+        PUBLIC   fmt::fmt        # PUBLIC, every platform
+        WINDOWS  ws2_32          # PUBLIC (still inside the PUBLIC group), Windows only
+        PRIVATE
+            LINUX pthread        # PRIVATE, Linux only
+)
+```
+
+**Escaping a literal sentinel value.** The sentinel words are reserved, so a value that is
+literally equal to one of them (most commonly a preprocessor definition such as `WINDOWS`)
+must be preceded by the `LITERAL` escape marker. `LITERAL` is dropped and the entry that
+follows it is added to the active bucket as an ordinary value instead of switching
+platform sections:
+
+```cmake
+cpp_library(
+    TARGET X
+    DEFINITIONS
+        PUBLIC LITERAL WINDOWS      # defines the macro WINDOWS on every platform
+        WINDOWS LITERAL LINUX       # defines the macro LINUX only on Windows
+)
+```
+
+`LITERAL` escapes exactly the one entry that follows it, so a later bare sentinel still
+opens a section as usual; it escapes itself too (`LITERAL LITERAL` yields a literal
+`LITERAL`); and a trailing `LITERAL` with nothing after it is a configure-time error.
 
 ### Source Auto-Discovery
 
