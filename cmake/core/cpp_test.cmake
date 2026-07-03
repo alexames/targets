@@ -103,10 +103,43 @@ function(cpp_test)
   # so a bare include(Targets) never touches the network — see issue #3).
   _targets_acquire_gtest()
 
-  # Parse arguments to extract TARGET name
-  set(options)
-  set(one_value_args TARGET FOLDER WORKING_DIRECTORY)
-  set(multi_value_args)
+  # Parse the FULL cpp_target keyword signature here so every token is bucketed exactly as
+  # cpp_target will bucket it. cpp_test only READS a few values — TARGET (to link the GTest
+  # entry point and register discovery), WORKING_DIRECTORY (forwarded to
+  # gtest_discover_tests), and whether FOLDER was given (to choose a default) — while every
+  # argument is forwarded UNCHANGED to cpp_target below.
+  #
+  # Re-parsing only a subset of the keywords (the old TARGET/FOLDER/WORKING_DIRECTORY parse)
+  # named none of the multi-value keywords, so their values — and any keyword that lost its
+  # value — were mis-associated depending on argument order, making the FOLDER/PROPERTIES
+  # handling unreliable (see issue #15). cpp_target owns actually applying FOLDER and
+  # PROPERTIES for every target type, including this executable (see issue #13), so cpp_test
+  # supplies only the default folder and never sets these properties itself.
+  set(options
+    STATIC
+    SHARED
+    UNITY_BUILD)
+  set(one_value_args
+    TYPE
+    TARGET
+    FOLDER
+    SOURCE_DIR
+    HEADER_DIR
+    WORKING_DIRECTORY
+    COMMAND_ARGUMENTS
+    CXX_STANDARD
+    VERSION
+    SOVERSION
+    UNITY_BUILD_BATCH_SIZE
+    NAMESPACE_ROOT)
+  set(multi_value_args
+    SOURCES
+    HEADERS
+    INCLUDES
+    DEFINITIONS
+    DEPENDENCIES
+    PROPERTIES
+    PRECOMPILE_HEADERS)
   cmake_parse_arguments(
     PARSE_ARGV 0
     _test_args
@@ -114,27 +147,35 @@ function(cpp_test)
     "${one_value_args}"
     "${multi_value_args}")
 
-  # Create executable using cpp_target
-  cpp_target(
-    TYPE EXECUTABLE
-    ${ARGN}  # Forward all arguments to cpp_target
-  )
-
-  # If no FOLDER was specified, default to Tests
-  if(NOT _test_args_FOLDER AND _test_args_TARGET)
-    set_target_properties(${_test_args_TARGET} PROPERTIES FOLDER "Tests")
+  if(NOT _test_args_TARGET)
+    message(FATAL_ERROR "cpp_test: TARGET argument is required")
   endif()
 
-  if(_test_args_TARGET AND TARGET ${_test_args_TARGET})
-    # Link GTest main entry point — every test needs this.
-    target_link_libraries(${_test_args_TARGET} PRIVATE GTest::gtest_main)
+  # Default the IDE folder to "Tests" unless the caller set one explicitly. Detect presence
+  # with DEFINED rather than truthiness so a falsey-but-valid folder name (e.g. a folder
+  # literally named "0" or "OFF") is honored instead of silently triggering the default
+  # (see issue #15). cpp_target applies the FOLDER value; putting the default ahead of
+  # ${ARGN} lets an explicit user FOLDER, if present there, win over it.
+  set(_folder_default "")
+  if(NOT DEFINED _test_args_FOLDER)
+    set(_folder_default FOLDER "Tests")
+  endif()
 
-    # Discover tests with optional working directory
-    if(_test_args_WORKING_DIRECTORY)
-      gtest_discover_tests(${_test_args_TARGET}
-        WORKING_DIRECTORY "${_test_args_WORKING_DIRECTORY}")
-    else()
-      gtest_discover_tests(${_test_args_TARGET})
-    endif()
+  # Create the test executable. Forward every original argument unchanged; cpp_target does
+  # the full argument validation and applies FOLDER/PROPERTIES.
+  cpp_target(
+    TYPE EXECUTABLE
+    ${_folder_default}
+    ${ARGN})
+
+  # Link the GTest entry point — every test needs it — and register the tests with CTest.
+  # cpp_target validated and created ${_test_args_TARGET}, so it exists here.
+  target_link_libraries(${_test_args_TARGET} PRIVATE GTest::gtest_main)
+
+  if(DEFINED _test_args_WORKING_DIRECTORY)
+    gtest_discover_tests(${_test_args_TARGET}
+      WORKING_DIRECTORY "${_test_args_WORKING_DIRECTORY}")
+  else()
+    gtest_discover_tests(${_test_args_TARGET})
   endif()
 endfunction()

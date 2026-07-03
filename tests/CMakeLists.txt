@@ -239,3 +239,41 @@ add_test(
 )
 set_tests_properties(cpp_library_default_type PROPERTIES
   PASS_REGULAR_EXPRESSION "DEFAULT_OK")
+
+# cpp_test() FOLDER/PROPERTIES robustness (regression tests for issue #15). cpp_test() used
+# to re-parse only TARGET/FOLDER/WORKING_DIRECTORY over the full argument list, naming none
+# of the multi-value keywords, so tokens were mis-associated by argument order and the
+# default-folder decision used a truthiness check that broke on falsey-but-valid folder
+# names. cpp_test() now parses the full cpp_target signature and delegates FOLDER/PROPERTIES
+# to cpp_target. Each scenario places FOLDER/PROPERTIES after a multi-value list (the
+# previously-broken ordering) and asserts the resulting target properties; the sentinel is
+# matched by PASS_REGULAR_EXPRESSION and any FATAL_ERROR assertion fails the test.
+add_test(
+  NAME cpp_test_default_folder
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=default_folder
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_folder"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_folder_default"
+)
+set_tests_properties(cpp_test_default_folder PROPERTIES
+  PASS_REGULAR_EXPRESSION "DEFAULT_FOLDER_OK")
+
+add_test(
+  NAME cpp_test_falsey_folder
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=falsey_folder
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_folder"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_folder_falsey"
+)
+set_tests_properties(cpp_test_falsey_folder PROPERTIES
+  PASS_REGULAR_EXPRESSION "FALSEY_FOLDER_OK")
+
+add_test(
+  NAME cpp_test_explicit_folder
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=explicit_folder
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_folder"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_folder_explicit"
+)
+set_tests_properties(cpp_test_explicit_folder PROPERTIES
+  PASS_REGULAR_EXPRESSION "EXPLICIT_FOLDER_OK")
