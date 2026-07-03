@@ -114,7 +114,6 @@ cpp_test(
     DEPENDENCIES
         PRIVATE
             MyLib
-            GTest::gtest_main
 )
 ```
 
@@ -198,11 +197,11 @@ add_executable(TestMyLib test/test.cpp)
 target_link_libraries(TestMyLib PRIVATE MyLib GTest::gtest_main)
 gtest_discover_tests(TestMyLib)
 
-# After
+# After (cpp_test auto-links GTest::gtest_main and runs gtest_discover_tests for you)
 cpp_test(
     TARGET TestMyLib
     SOURCES test/test.cpp
-    DEPENDENCIES PRIVATE MyLib GTest::gtest_main
+    DEPENDENCIES PRIVATE MyLib
 )
 ```
 

@@ -303,7 +303,9 @@ cpp_binary(
 
 ### `cpp_test()`
 
-Define a C++ test executable (requires Google Test).
+Define a C++ test executable. Google Test is acquired automatically on the first `cpp_test()`
+call — located with `find_package(GTest)`, or fetched with `FetchContent` if it isn't
+installed — so you do not need to provide it yourself.
 
 ```cmake
 cpp_test(

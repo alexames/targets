@@ -175,8 +175,9 @@ cpp_binary(
 
 Defines a Google Test executable and registers it with CTest via
 `gtest_discover_tests`. **The GTest entry point is linked automatically** — you do *not*
-need to add `GTest::gtest_main` to `DEPENDENCIES`. If Google Test isn't found, it is
-fetched with `FetchContent`. Tests default to the `Tests` IDE folder.
+need to add `GTest::gtest_main` to `DEPENDENCIES`. Google Test is acquired on the first
+`cpp_test()` call (not at `include` time) — located with `find_package(GTest)`, or fetched
+with `FetchContent` if it isn't installed. Tests default to the `Tests` IDE folder.
 
 ```cmake
 cpp_test(
