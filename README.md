@@ -348,6 +348,10 @@ ctest --test-dir build --output-on-failure
 
 Options: `TARGETS_BUILD_EXAMPLES` (default ON), `TARGETS_BUILD_TESTS` (default ON).
 
+Consumer-facing option: `TARGETS_MSVC_EDIT_AND_CONTINUE` (default ON) controls whether
+MSVC targets get `/ZI` (edit-and-continue debug info) in Debug builds on x86/x64. It is
+never applied to Release or ARM64; set it to `OFF` to suppress `/ZI` entirely.
+
 The test suite currently includes script-mode unit tests for the platform parser
 (`tests/unit/`). Broader integration coverage is planned
 ([#24](https://github.com/alexames/targets/issues/24)).

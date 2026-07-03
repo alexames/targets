@@ -381,3 +381,22 @@ Targets automatically:
 - Sets FOLDER properties for Solution Explorer organization
 - Configures debugger working directories
 - Organizes generated code into separate IDE folders
+
+### MSVC Compiler Flags
+
+On MSVC, `cpp_library`/`cpp_binary` inject a small, scoped set of flags into
+non-INTERFACE targets:
+
+- **`/utf-8`** — always applied. Treats source and execution character sets as UTF-8.
+- **`/ZI`** (edit-and-continue debug info) — applied **only to Debug builds** (via a
+  `$<$<CONFIG:Debug>:...>` generator expression) and **only on x86/x64**. It is never
+  applied to Release (where it de-optimizes the build) and is skipped on ARM/ARM64
+  (where it is invalid). Set `-DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF` to suppress it
+  entirely.
+- **`/SAFESEH:NO`** — applied **only to x86 (32-bit) executables and shared libraries**,
+  where it has effect. It is a no-op on x64, invalid on ARM64, and ignored on static
+  libraries, so it is not injected in those cases.
+
+Non-MSVC toolchains (GCC, Clang, clang-cl) receive none of these flags. You can add or
+override any flag afterward with the standard `target_compile_options()` /
+`target_link_options()` commands.

@@ -7,6 +7,14 @@ include_guard(GLOBAL)
 # Enable folder organization in IDEs
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# Whether cpp_target injects MSVC edit-and-continue debug info (/ZI) into Debug builds.
+# /ZI is a developer convenience that only applies to x86/x64 and must never reach
+# Release, where it de-optimizes the build (see issue #5). It is gated to Debug via a
+# generator expression and skipped entirely on ARM/ARM64. Set this to OFF to suppress
+# /ZI in every configuration.
+option(TARGETS_MSVC_EDIT_AND_CONTINUE
+  "Inject MSVC /ZI (edit-and-continue debug info) into Debug builds on x86/x64" ON)
+
 # Include dependency management
 get_filename_component(_TARGETS_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
@@ -284,15 +292,30 @@ function(cpp_target)
       PRIVATE ${PRIVATE_DEFINITIONS}
     )
 
-    # Platform-specific compiler settings
+    # MSVC compiler and linker flags. Each flag is scoped to the configurations and
+    # architectures where it is valid; injecting them unconditionally de-optimized
+    # Release and broke ARM64 (see issue #5).
     if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-      target_compile_options(${args_TARGET} PRIVATE
-        /utf-8        # UTF-8 source and execution
-        /ZI           # Edit and continue debug info
-      )
-      target_link_options(${args_TARGET} PRIVATE
-        /SAFESEH:NO   # Disable safe exception handlers
-      )
+      # UTF-8 source and execution character sets: safe in every configuration and
+      # on every architecture.
+      target_compile_options(${args_TARGET} PRIVATE /utf-8)
+
+      # Edit-and-continue debug info (/ZI) is a Debug-only developer convenience. It
+      # de-optimizes Release builds and is only valid on x86/x64, so it is gated to
+      # Debug via a generator expression, skipped on ARM/ARM64, and can be disabled
+      # entirely with -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF.
+      if(TARGETS_MSVC_EDIT_AND_CONTINUE
+         AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
+        target_compile_options(${args_TARGET} PRIVATE "$<$<CONFIG:Debug>:/ZI>")
+      endif()
+
+      # /SAFESEH:NO only affects the x86 (32-bit) linker: it is a silent no-op on x64,
+      # invalid on ARM64, and ignored on static libraries (which are archived, not
+      # linked). Restrict it to x86 executables and shared libraries.
+      if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "X86"
+         AND (args_TYPE STREQUAL "EXECUTABLE" OR args_SHARED))
+        target_link_options(${args_TARGET} PRIVATE /SAFESEH:NO)
+      endif()
     endif()
 
     # Add dependencies
