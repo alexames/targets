@@ -133,6 +133,48 @@ function(_targets_dummy_source OUT_VAR)
   set(${OUT_VAR} "${dummy_file}" PARENT_SCOPE)
 endfunction()
 
+# Stage a target's runtime DATA next to its built artifact so the program (or test) finds it
+# at run time. DATA entries are runtime dependencies -- data files a binary or test reads
+# while running -- mirroring Bazel's `data` attribute. Each entry is resolved relative to
+# SOURCE_DIR (absolute paths are kept as-is); a regular file is copied with copy_if_different
+# and a directory is mirrored recursively into the output dir. The copy runs POST_BUILD (like
+# the runtime-DLL staging of issue #21) so a rebuilt data file is refreshed. TARGET is the
+# target to stage for, SOURCE_DIR resolves relative entries, and the entries are the trailing
+# arguments; an empty entry list is a no-op.
+function(_targets_stage_data TARGET SOURCE_DIR)
+  set(files "")
+  set(dirs "")
+  foreach(entry IN LISTS ARGN)
+    if(IS_ABSOLUTE "${entry}")
+      set(entry_abs "${entry}")
+    else()
+      set(entry_abs "${SOURCE_DIR}/${entry}")
+    endif()
+    # A directory is classified only when it exists at configure time; a not-yet-generated
+    # entry is treated as a file and copied at build time (when it should exist).
+    if(IS_DIRECTORY "${entry_abs}")
+      list(APPEND dirs "${entry_abs}")
+    else()
+      list(APPEND files "${entry_abs}")
+    endif()
+  endforeach()
+
+  # Copy all plain files in one command (copy_if_different accepts many sources + a
+  # destination directory), then mirror each directory into a same-named subdirectory.
+  if(files)
+    add_custom_command(TARGET ${TARGET} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${files} "$<TARGET_FILE_DIR:${TARGET}>"
+      VERBATIM)
+  endif()
+  foreach(dir IN LISTS dirs)
+    get_filename_component(dir_name "${dir}" NAME)
+    add_custom_command(TARGET ${TARGET} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${dir}" "$<TARGET_FILE_DIR:${TARGET}>/${dir_name}"
+      VERBATIM)
+  endforeach()
+endfunction()
+
 # Main cpp_target function
 function(cpp_target)
   # Parse function arguments
@@ -167,6 +209,9 @@ function(cpp_target)
     INCLUDES                  # Include directories (with PUBLIC/PRIVATE)
     DEFINITIONS               # Compiler definitions (with PUBLIC/PRIVATE)
     DEPENDENCIES              # Link libraries (with PUBLIC/PRIVATE)
+    COPTS                     # Per-target compile options (with PUBLIC/PRIVATE) (issue #27)
+    LINKOPTS                  # Per-target link options (with PUBLIC/PRIVATE) (issue #27)
+    DATA                      # Runtime data files staged next to the artifact (issue #27)
     PROPERTIES                # Additional CMake properties
     PRECOMPILE_HEADERS        # Headers to precompile
     SANITIZERS                # Opt-in sanitizers, e.g. address undefined (issue #23)
@@ -249,6 +294,10 @@ function(cpp_target)
   # Filter platform-conditional entries out of list arguments.
   _targets_parse_platforms(args_SOURCES ${args_SOURCES})
   _targets_parse_platforms(args_HEADERS ${args_HEADERS})
+  # DATA carries no PUBLIC/PRIVATE (a runtime file has no visibility), so it is platform-
+  # filtered directly here; COPTS/LINKOPTS carry visibility and are parsed in the compiled
+  # branch alongside DEFINITIONS (issue #27).
+  _targets_parse_platforms(args_DATA ${args_DATA})
 
   # Gather source files
   unset(sources)
@@ -443,6 +492,18 @@ function(cpp_target)
     if(PRIVATE_DEPENDENCIES)
       list(APPEND ignored_args "DEPENDENCIES (PRIVATE)")
     endif()
+    # COPTS/LINKOPTS are compile/link settings and DATA stages files next to a built
+    # artifact; a header-only INTERFACE library has neither a compile step nor an artifact,
+    # so all three are reported as ignored rather than applied (issue #27, consistent with #13).
+    if(args_COPTS)
+      list(APPEND ignored_args "COPTS")
+    endif()
+    if(args_LINKOPTS)
+      list(APPEND ignored_args "LINKOPTS")
+    endif()
+    if(args_DATA)
+      list(APPEND ignored_args "DATA")
+    endif()
     if(args_VERSION)
       list(APPEND ignored_args "VERSION")
     endif()
@@ -572,6 +633,32 @@ function(cpp_target)
       PRIVATE ${PRIVATE_DEFINITIONS}
     )
 
+    # Per-target compile / link options (Bazel copts / linkopts, issue #27). Grouped under
+    # PUBLIC/PRIVATE and platform-filtered exactly like DEFINITIONS, then translated to the
+    # native target_compile_options / target_link_options. PUBLIC entries become usage
+    # requirements (also applied to consumers via INTERFACE_COMPILE_OPTIONS/LINK_OPTIONS);
+    # PRIVATE entries apply only to this target's own build. Each visibility is applied only
+    # when non-empty so an empty section never reaches the underlying command.
+    _targets_parse_access_specifier("cpp_target" COPTS ${args_COPTS})
+    _targets_parse_platforms(PUBLIC_COPTS ${PUBLIC_COPTS})
+    _targets_parse_platforms(PRIVATE_COPTS ${PRIVATE_COPTS})
+    if(PUBLIC_COPTS)
+      target_compile_options(${args_TARGET} PUBLIC ${PUBLIC_COPTS})
+    endif()
+    if(PRIVATE_COPTS)
+      target_compile_options(${args_TARGET} PRIVATE ${PRIVATE_COPTS})
+    endif()
+
+    _targets_parse_access_specifier("cpp_target" LINKOPTS ${args_LINKOPTS})
+    _targets_parse_platforms(PUBLIC_LINKOPTS ${PUBLIC_LINKOPTS})
+    _targets_parse_platforms(PRIVATE_LINKOPTS ${PRIVATE_LINKOPTS})
+    if(PUBLIC_LINKOPTS)
+      target_link_options(${args_TARGET} PUBLIC ${PUBLIC_LINKOPTS})
+    endif()
+    if(PRIVATE_LINKOPTS)
+      target_link_options(${args_TARGET} PRIVATE ${PRIVATE_LINKOPTS})
+    endif()
+
     # MSVC compiler and linker flags. Each flag is scoped to the configurations and
     # architectures where it is valid; injecting them unconditionally de-optimized
     # Release and broke ARM64 (see issue #5).
@@ -656,6 +743,15 @@ function(cpp_target)
           "$<TARGET_FILE_DIR:${args_TARGET}>"
         COMMAND_EXPAND_LISTS
         VERBATIM)
+    endif()
+
+    # Stage runtime DATA next to the built artifact (Bazel data, issue #27). The files a
+    # program or test reads at run time are copied into the target's output directory after
+    # every build, so it finds them via a relative path when launched from the build tree --
+    # mirroring the runtime-DLL staging above. DATA was already platform-filtered near the top;
+    # a header-only INTERFACE library never reaches this branch, so it warns instead (above).
+    if(args_DATA)
+      _targets_stage_data(${args_TARGET} "${args_SOURCE_DIR}" ${args_DATA})
     endif()
 
     # Configure precompiled headers

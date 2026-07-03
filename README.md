@@ -194,6 +194,35 @@ Targets first happens to be `include`d) can silently drop tests from `ctest`. Ca
 default-on by `include(CTest)`): when `BUILD_TESTING` is `OFF`, `cpp_test()` becomes a
 no-op — it creates no target and never acquires Google Test.
 
+`cpp_test` additionally accepts Bazel-style **test attributes** that map to CTest properties
+on every discovered test, plus `DATA` (below) for the files a test reads at run time:
+
+```cmake
+cpp_test(
+    TARGET TestMyLib
+    SOURCES test/test_mylib.cpp
+    DEPENDENCIES PRIVATE MyLib
+    DATA test/fixtures/sample.json   # staged next to the test binary; the test's default
+                                     # working dir becomes that directory so it opens it
+                                     # via a relative path
+    SIZE medium                      # default TIMEOUT from the Bazel size (see table below)
+    TIMEOUT 30                        # explicit CTest TIMEOUT in seconds (overrides SIZE)
+    LABELS unit fast                  # CTest labels (run a subset with `ctest -L fast`)
+    ARGS --gtest_shuffle              # passed to the test executable when CTest runs it
+)
+```
+
+| `SIZE` | Default `TIMEOUT` |
+|---|---|
+| `small` | 60 s |
+| `medium` | 300 s |
+| `large` | 900 s |
+| `enormous` | 3600 s |
+
+`ARGS` are the arguments CTest passes to the test **when it runs** (via
+`gtest_discover_tests`' `EXTRA_ARGS`). They are distinct from `COMMAND_ARGUMENTS`, which only
+sets the Visual Studio debugger's F5 arguments and has no effect on `ctest`.
+
 ### Common arguments
 
 | Argument | Rules | Meaning |
@@ -204,6 +233,9 @@ no-op — it creates no target and never acquires Google Test.
 | `INCLUDES` | all | Include dirs, grouped under `PUBLIC` / `PRIVATE`. |
 | `DEFINITIONS` | all | Preprocessor definitions, grouped under `PUBLIC` / `PRIVATE`. |
 | `DEPENDENCIES` | all | Link libraries, grouped under `PUBLIC` / `PRIVATE`. |
+| `COPTS` | all (compiled) | Extra compile options (`target_compile_options`), grouped under `PUBLIC` / `PRIVATE`, platform-filtered. |
+| `LINKOPTS` | all (compiled) | Extra link options (`target_link_options`), grouped under `PUBLIC` / `PRIVATE`, platform-filtered. |
+| `DATA` | all (compiled) | Runtime data files/directories staged next to the built artifact after each build. |
 | `CXX_STANDARD` | all | C++ standard for this target (default **23**). |
 | `FOLDER` | all | IDE folder path (defaults derive from the namespace). |
 | `PROPERTIES` | all | Extra `set_target_properties` key/value pairs. |
@@ -221,7 +253,11 @@ no-op — it creates no target and never acquires Google Test.
 | `INSTALL` | `cpp_library`, `cpp_binary` | **Flag** — generate install/export rules (see [Installing & exporting](#installing--exporting-libraries)). |
 | `EXPORT` | `cpp_library`, `cpp_binary` | Export-set name for the installed target (implies `INSTALL`; default `<Project>Targets`). |
 | `WORKING_DIRECTORY` | `cpp_binary`, `cpp_test` | Debugger / test working directory. |
-| `COMMAND_ARGUMENTS` | `cpp_binary` | VS debugger command-line arguments. |
+| `COMMAND_ARGUMENTS` | `cpp_binary` | VS debugger command-line arguments (F5). Not passed by `ctest`; use `cpp_test`'s `ARGS` for that. |
+| `SIZE` | `cpp_test` | Bazel test size (`small` \| `medium` \| `large` \| `enormous`) → default CTest `TIMEOUT`. |
+| `TIMEOUT` | `cpp_test` | CTest per-test timeout in seconds (overrides the `SIZE` default). |
+| `LABELS` | `cpp_test` | CTest labels applied to every discovered test (`ctest -L <label>`). |
+| `ARGS` | `cpp_test` | Arguments passed to the test executable when CTest runs it. |
 | `SOURCE_DIR` | all | Base dir for relative sources (default: current list dir). |
 | `HEADER_DIR` | all | Base dir for relative headers (default: `<current list dir>/Include`). |
 | `NAMESPACE_ROOT` | all | Root for namespace-alias derivation (default: `${PROJECT_SOURCE_DIR}/Source`). |
@@ -369,10 +405,54 @@ Notes:
 A worked example (a library and executable built with `WARNINGS strict` and `LTO`) lives in
 [`examples/toolchain_hygiene`](examples/toolchain_hygiene); CI builds it on all three OSes.
 
+## Per-target compile & link options
+
+`COPTS` and `LINKOPTS` add raw compile / link options to a target — the escape hatch for a
+flag Targets doesn't model natively. They carry `PUBLIC` / `PRIVATE` visibility and the same
+platform buckets as `DEFINITIONS` (see [Platform-conditional entries](#platform-conditional-entries)),
+and translate to `target_compile_options` / `target_link_options`. `PUBLIC` options propagate
+to consumers (as `INTERFACE_COMPILE_OPTIONS` / `INTERFACE_LINK_OPTIONS`); `PRIVATE` options
+apply only to this target's own build.
+
+```cmake
+cpp_library(
+    TARGET MyLib
+    SOURCES src/mylib.cpp
+    COPTS
+        PRIVATE -fno-rtti          # this target only
+        WINDOWS /bigobj            # Windows builds only
+    LINKOPTS
+        PRIVATE -Wl,--as-needed
+)
+```
+
+Being compile/link settings, they apply only to compiled targets; on a header-only
+**INTERFACE** library they are reported as ignored (like the toolchain-hygiene knobs,
+[#13](https://github.com/alexames/targets/issues/13)).
+
+## Runtime data files (`DATA`)
+
+`DATA` lists the files (and directories) a target reads at run time — Bazel's `data`
+attribute. After each build, Targets copies them next to the built artifact (into
+`$<TARGET_FILE_DIR>`, via a `POST_BUILD` step, exactly like the [DLL staging](#shared-libraries-on-windows)
+above), so the program finds them by a relative path when launched from the build tree.
+`DATA` honors the same [platform buckets](#platform-conditional-entries) as the other lists.
+
+```cmake
+cpp_binary(TARGET MyApp SOURCES src/main.cpp DATA assets/config.json assets/shaders/)
+```
+
+For a **`cpp_test`**, the staged data is what the test opens at run time, so — unless you set
+`WORKING_DIRECTORY` explicitly — the discovered tests' working directory defaults to the test
+binary's directory, and a relative `open("fixture.json")` just works. `DATA` is a runtime
+concern of a built artifact, so (like `COPTS`/`LINKOPTS`) it is ignored on a header-only
+INTERFACE library. A worked example lives in [`examples/data_files`](examples/data_files); CI
+builds it and **runs** it on all three OSes, proving the data lands next to the binary.
+
 ## Platform-conditional entries
 
-`SOURCES`, `HEADERS`, `INCLUDES`, `DEFINITIONS`, and `DEPENDENCIES` support inline
-platform filtering. List unconditional entries first, then group platform-specific
+`SOURCES`, `HEADERS`, `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`, `COPTS`, `LINKOPTS`, and
+`DATA` support inline platform filtering. List unconditional entries first, then group platform-specific
 entries under a sentinel: `WINDOWS`, `LINUX`, `MACOS`, `ANDROID`, `EMSCRIPTEN`, or
 `DEFAULT` (used when no specific platform matches).
 
