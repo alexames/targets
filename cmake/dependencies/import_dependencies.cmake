@@ -16,14 +16,29 @@ define_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_LIST
 )
 set_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_LIST "")
 
-# Configuration variables
-if(NOT TARGETS_SOURCE_DIR)
-  set(TARGETS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/Source" CACHE PATH "Root directory for source files")
-endif()
+# Resolve the per-project roots that map a namespaced label to a subdirectory. These are
+# deliberately recomputed on every call rather than frozen once: the previous code cached
+# them as CACHE PATH at module-include time, so they froze to the *first* project that
+# configured. In a multi-project tree (a Targets project embedded via
+# add_subdirectory/FetchContent) every later project then resolved its own imports against
+# the first project's Source tree, so even a namespace match looked in the wrong place (see
+# issue #8). An explicit TARGETS_SOURCE_DIR / TARGETS_BINARY_DIR set by the consumer still
+# wins; otherwise each defaults to the *enclosing* project's Source directory.
+function(_targets_source_root out_var)
+  if(TARGETS_SOURCE_DIR)
+    set(${out_var} "${TARGETS_SOURCE_DIR}" PARENT_SCOPE)
+  else()
+    set(${out_var} "${PROJECT_SOURCE_DIR}/Source" PARENT_SCOPE)
+  endif()
+endfunction()
 
-if(NOT TARGETS_BINARY_DIR)
-  set(TARGETS_BINARY_DIR "${PROJECT_BINARY_DIR}/Source" CACHE PATH "Root directory for build files")
-endif()
+function(_targets_binary_root out_var)
+  if(TARGETS_BINARY_DIR)
+    set(${out_var} "${TARGETS_BINARY_DIR}" PARENT_SCOPE)
+  else()
+    set(${out_var} "${PROJECT_BINARY_DIR}/Source" PARENT_SCOPE)
+  endif()
+endfunction()
 
 # Internal implementation with circular dependency detection
 function(_targets_import_subdirectory_real target subdirectory)
@@ -80,9 +95,11 @@ function(_targets_import_subdirectory_real target subdirectory)
     list(APPEND imported_list "${subdirectory}")
     set_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_LIST "${imported_list}")
 
-    # Construct full path
-    set(source_dir "${TARGETS_SOURCE_DIR}/${subdirectory}")
-    set(binary_dir "${TARGETS_BINARY_DIR}/${subdirectory}")
+    # Construct full path against the enclosing project's roots (see issue #8).
+    _targets_source_root(source_root)
+    _targets_binary_root(binary_root)
+    set(source_dir "${source_root}/${subdirectory}")
+    set(binary_dir "${binary_root}/${subdirectory}")
 
     # Validate directory exists
     if(NOT EXISTS "${source_dir}")
@@ -123,8 +140,11 @@ function(import_dependencies target dependencies)
       # Get root namespace
       list(GET namespace_list 0 root)
 
-      # Only auto-import if it matches the current project
-      if(root STREQUAL "${CMAKE_PROJECT_NAME}")
+      # Only auto-import labels rooted at the *enclosing* project (PROJECT_NAME), not the
+      # top-level project (CMAKE_PROJECT_NAME). When embedded, a subproject's own deps
+      # (e.g. "SubProj::Core::Lib") never matched the top-level name, so they were silently
+      # skipped and later surfaced as a generic "target not found" (see issue #8).
+      if(root STREQUAL "${PROJECT_NAME}")
         # Remove project name from front
         list(POP_FRONT namespace_list)
 
@@ -159,7 +179,8 @@ function(import_all dir)
       if(NOT "${child_path}" STREQUAL "${CMAKE_BINARY_DIR}")
         # If it has a CMakeLists.txt, import it
         if(EXISTS "${child_path}/CMakeLists.txt")
-          file(RELATIVE_PATH relative_child_path "${TARGETS_SOURCE_DIR}" "${child_path}")
+          _targets_source_root(source_root)
+          file(RELATIVE_PATH relative_child_path "${source_root}" "${child_path}")
           import_subdirectory("${relative_child_path}")
         endif()
 

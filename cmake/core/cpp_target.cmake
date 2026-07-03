@@ -301,7 +301,12 @@ function(cpp_target)
     set(relative_path_from_root "")
   endif()
 
-  set(default_folder "${CMAKE_PROJECT_NAME}")
+  # Derive the namespace root from the *enclosing* project (PROJECT_NAME), not the
+  # top-level project (CMAKE_PROJECT_NAME). Keying off CMAKE_PROJECT_NAME made a library's
+  # alias change when it was embedded via add_subdirectory/FetchContent -- e.g. a target in
+  # project(Sub)'s Source/Core resolved to Sub::Core::Lib standalone but Super::Core::Lib
+  # under project(Super) -- breaking every reference to the standalone alias (see issue #8).
+  set(default_folder "${PROJECT_NAME}")
   if(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
     set(default_folder "${default_folder}/${relative_path_from_root}")
   endif()
@@ -421,9 +426,9 @@ function(cpp_target)
     if(args_FOLDER)
       set_target_properties(${args_TARGET} PROPERTIES FOLDER "${args_FOLDER}")
     elseif(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
-      set_target_properties(${args_TARGET} PROPERTIES FOLDER "${CMAKE_PROJECT_NAME}/${relative_path_from_root}")
+      set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}/${relative_path_from_root}")
     else()
-      set_target_properties(${args_TARGET} PROPERTIES FOLDER "${CMAKE_PROJECT_NAME}")
+      set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}")
     endif()
 
     # Set working directory for executables (debugger)

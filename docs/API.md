@@ -351,6 +351,10 @@ This creates:
 
 You can reference these targets from anywhere in your project.
 
+The leading namespace is the **enclosing** project name (`PROJECT_NAME`), not the
+top-level project. A library therefore keeps the same aliases and IDE folders whether it
+is built standalone or embedded in a larger build via `add_subdirectory`/`FetchContent`.
+
 ### Access Specifiers
 
 All functions support PUBLIC/PRIVATE access specifiers for:

@@ -104,3 +104,15 @@ add_test(
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_msvc_flags"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_msvc_flags_no_edit_continue"
 )
+
+# Embedded-subproject namespace derivation (regression test for issue #8). An outer
+# project(Outer) embeds an inner project(Inner) that calls cpp_library() under its own
+# Source/Core tree. The alias and IDE folder must be derived from the enclosing project
+# (Inner::Core::InnerLib, folder "Inner/Core"), not the top-level CMAKE_PROJECT_NAME
+# (Outer). A FATAL_ERROR in any assertion fails the test.
+add_test(
+  NAME cpp_target_embedded_subproject
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_embedded_subproject"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_embedded_subproject"
+)
