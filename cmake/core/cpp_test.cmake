@@ -25,17 +25,38 @@ function(_targets_acquire_gtest)
     find_package(GTest QUIET)
 
     if(NOT GTest_FOUND)
-      # Fall back to FetchContent if absent
+      # Fall back to FetchContent if absent.
       include(FetchContent)
+
+      # Add the fetched googletest with EXCLUDE_FROM_ALL so its targets are NOT part of the
+      # default ALL build — they compile only when a cpp_test target actually links them.
+      # Without this the fetched gtest/gmock pollute a consumer's default build even when no
+      # test is ever built. FetchContent_Declare gained the EXCLUDE_FROM_ALL option in CMake
+      # 3.28; on older CMake we omit it (configuration still succeeds) rather than break.
+      # See https://github.com/alexames/targets/issues/10.
+      set(_targets_gtest_exclude_from_all "")
+      if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
+        set(_targets_gtest_exclude_from_all EXCLUDE_FROM_ALL)
+      endif()
+
       FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
         GIT_TAG v1.15.2
+        ${_targets_gtest_exclude_from_all}
         FIND_PACKAGE_ARGS NAMES GTest
       )
 
-      # For Windows: Prevent overriding the parent project's compiler/linker settings
+      # On Windows/MSVC, build googletest against the shared CRT so it matches the default
+      # consumer runtime and avoids CRT-mismatch link errors.
       set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+      # Do not let the fetched googletest contribute install() rules: a consumer running
+      # `cmake --install` must not deposit gtest/gmock headers, libraries, or package config
+      # into its install prefix. Must be set before FetchContent_MakeAvailable so
+      # googletest's option(INSTALL_GTEST ...) picks up the forced OFF value.
+      # See https://github.com/alexames/targets/issues/10.
+      set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
       FetchContent_MakeAvailable(googletest)
 

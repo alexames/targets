@@ -142,3 +142,18 @@ add_test(
 )
 set_tests_properties(cpp_test_no_enable_testing_side_effect PROPERTIES
   PASS_REGULAR_EXPRESSION "NO_SIDE_EFFECT_OK")
+
+# FetchContent googletest install/ALL hygiene (regression test for issue #10). When
+# Google Test is acquired via FetchContent, INSTALL_GTEST must be OFF before
+# FetchContent_MakeAvailable (so gtest/gmock install rules never leak into a consumer's
+# install tree) and the googletest subdirectory must be added EXCLUDE_FROM_ALL (so its
+# targets do not build as part of ALL). The FetchContent branch is forced offline and its
+# entry points stubbed, so the assertions run network-free and compiler-free.
+add_test(
+  NAME cpp_test_install_gtest_hygiene
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_install_gtest"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_install_gtest"
+)
+set_tests_properties(cpp_test_install_gtest_hygiene PROPERTIES
+  PASS_REGULAR_EXPRESSION "INSTALL_GTEST_OFF_OK")
