@@ -17,3 +17,12 @@ add_test(
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/embed_binary"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/embed_binary"
 )
+
+# include(Targets) with zero cpp_test() calls must not acquire Google Test
+# (regression test for issue #3). Configures offline-clean: no network access.
+add_test(
+  NAME cpp_test_lazy_gtest_configure
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_lazy_gtest"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_lazy_gtest"
+)
