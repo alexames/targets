@@ -24,6 +24,14 @@ endfunction()
 # Known platform sentinel tokens recognized by _targets_parse_platforms[_for].
 set(_TARGETS_PLATFORM_KEYWORDS WINDOWS LINUX MACOS ANDROID EMSCRIPTEN DEFAULT)
 
+# Escape marker. A token equal to this keyword forces the token that follows it
+# to be treated as a literal value (added to the active bucket) instead of a
+# platform sentinel. This is the escape hatch for values that legitimately
+# collide with a sentinel word, e.g. a preprocessor definition named WINDOWS:
+#   DEFINITIONS PUBLIC LITERAL WINDOWS   # defines the macro WINDOWS
+# The marker escapes itself too: `LITERAL LITERAL` emits a literal `LITERAL`.
+set(_TARGETS_PLATFORM_ESCAPE LITERAL)
+
 # Filter a token list by platform. Pure function — takes the platform
 # explicitly so it can be unit-tested for any target platform from any host.
 #
@@ -31,6 +39,9 @@ set(_TARGETS_PLATFORM_KEYWORDS WINDOWS LINUX MACOS ANDROID EMSCRIPTEN DEFAULT)
 #   - Tokens appearing before any sentinel are unconditional (always kept).
 #   - After a sentinel (WINDOWS, LINUX, MACOS, ANDROID, EMSCRIPTEN, DEFAULT),
 #     tokens belong to that platform's bucket until the next sentinel.
+#   - The escape marker (LITERAL) consumes the next token as a literal value
+#     for the active bucket, so a value that collides with a sentinel word can
+#     still be passed through. The marker is dropped from the output.
 #   - The output is: unconditional tokens + the tokens from the PLATFORM
 #     bucket if PLATFORM was listed, otherwise the DEFAULT bucket if one
 #     was provided, otherwise nothing.
@@ -41,14 +52,21 @@ function(_targets_parse_platforms_for OUT_VAR PLATFORM)
   set(_unconditional "")
   set(_current_section "")
   set(_listed_platforms "")
+  set(_escaped FALSE)
 
   foreach(_kw ${_TARGETS_PLATFORM_KEYWORDS})
     set(_section_${_kw} "")
   endforeach()
 
   foreach(_token IN LISTS ARGN)
+    if(NOT _escaped AND "${_token}" STREQUAL "${_TARGETS_PLATFORM_ESCAPE}")
+      # Consume the marker; the next token is forced to be a literal value.
+      set(_escaped TRUE)
+      continue()
+    endif()
+
     list(FIND _TARGETS_PLATFORM_KEYWORDS "${_token}" _idx)
-    if(NOT _idx EQUAL -1)
+    if(NOT _escaped AND NOT _idx EQUAL -1)
       set(_current_section "${_token}")
       if(NOT "${_token}" IN_LIST _listed_platforms)
         list(APPEND _listed_platforms "${_token}")
@@ -60,7 +78,14 @@ function(_targets_parse_platforms_for OUT_VAR PLATFORM)
         list(APPEND _section_${_current_section} "${_token}")
       endif()
     endif()
+    set(_escaped FALSE)
   endforeach()
+
+  if(_escaped)
+    message(FATAL_ERROR
+      "_targets_parse_platforms_for: escape marker '${_TARGETS_PLATFORM_ESCAPE}' "
+      "must be followed by a value")
+  endif()
 
   set(_result ${_unconditional})
   if("${PLATFORM}" IN_LIST _listed_platforms)
