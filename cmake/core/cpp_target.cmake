@@ -99,6 +99,28 @@ function(_targets_partition_files_by_root ROOT UNDER_VAR OUTSIDE_VAR)
   set(${OUTSIDE_VAR} "${outside}" PARENT_SCOPE)
 endfunction()
 
+# Resolve the shipped placeholder translation unit (dummy.cpp) into OUT_VAR (set in the
+# caller's scope). A source-less, non-header-only target -- e.g. a codegen STATIC library
+# whose translation units are produced by a custom command -- still needs at least one
+# real TU for some toolchains (notably MSVC) to emit an archive; dummy.cpp is that TU.
+#
+# The file ships beside the CMake modules in both the source tree (cmake/dummy.cpp) and
+# the installed package (share/targets/cmake/dummy.cpp), so the same
+# ${_TARGETS_ROOT_DIR}-relative path resolves in dev builds and for find_package
+# consumers. A missing file means a broken checkout or a package that failed to ship it,
+# which would otherwise surface as a confusing "No SOURCES given to target" or an empty
+# archive, so it is a hard error rather than a silent skip (see issue #7).
+function(_targets_dummy_source OUT_VAR)
+  set(dummy_file "${_TARGETS_ROOT_DIR}/dummy.cpp")
+  if(NOT EXISTS "${dummy_file}")
+    message(FATAL_ERROR
+      "Targets: placeholder translation unit not found at '${dummy_file}'. The "
+      "Targets package is incomplete -- dummy.cpp must ship beside the CMake modules "
+      "(see issue #7).")
+  endif()
+  set(${OUT_VAR} "${dummy_file}" PARENT_SCOPE)
+endfunction()
+
 # Main cpp_target function
 function(cpp_target)
   # Parse function arguments
@@ -190,7 +212,9 @@ function(cpp_target)
   # Create source groups for IDE organization. source_group(TREE ...) hard-errors on any
   # file outside the tree root, so out-of-root sources (generated files in an out-of-source
   # build tree, or ../shared sources) are collected into a flat "Generated Files" group
-  # instead of aborting configuration (see issue #6).
+  # instead of aborting configuration (see issue #6). The dummy.cpp placeholder for
+  # source-less targets is injected later, at target creation, so that the header-only
+  # INTERFACE decision is made on the user's own sources alone (see issue #7).
   if(sources)
     _targets_partition_files_by_root(
       "${args_SOURCE_DIR}" in_tree_sources out_of_tree_sources ${sources})
@@ -199,13 +223,6 @@ function(cpp_target)
     endif()
     if(out_of_tree_sources)
       source_group("Generated Files" FILES ${out_of_tree_sources})
-    endif()
-  else()
-    # If no sources provided, add a dummy file (for header-only or generated targets)
-    set(dummy_file "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dummy.cpp")
-    if(EXISTS "${dummy_file}")
-      list(APPEND sources "${dummy_file}")
-      source_group("CMake Rules" FILES "${dummy_file}")
     endif()
   endif()
 
@@ -240,17 +257,36 @@ function(cpp_target)
       set(library_type STATIC)
     endif()
 
-    # Handle header-only libraries
+    # Handle header-only libraries. The INTERFACE decision is made on the user's own
+    # SOURCES: a header-only library (headers but no sources) becomes INTERFACE and must
+    # never receive the dummy.cpp placeholder, which would flip it to STATIC and change
+    # its usage-requirement semantics (see issue #7).
     if(NOT sources AND headers)
       add_library(${args_TARGET} INTERFACE)
       set(_is_interface_library TRUE)
     else()
+      # A source-less, header-less library (e.g. a codegen STATIC target whose translation
+      # units are produced by a custom command) still needs one real TU to archive; inject
+      # the shipped placeholder for it. Header-only libraries never reach this branch, so
+      # they never gain the dummy TU.
+      if(NOT sources)
+        _targets_dummy_source(dummy_file)
+        list(APPEND sources "${dummy_file}")
+        source_group("CMake Rules" FILES "${dummy_file}")
+      endif()
       add_library(${args_TARGET} ${library_type} ${sources} ${headers})
       set(_is_interface_library FALSE)
     endif()
   elseif(args_TYPE STREQUAL "EXECUTABLE")
     if(args_STATIC OR args_SHARED)
       message(FATAL_ERROR "cpp_target: Executables cannot be marked STATIC or SHARED")
+    endif()
+    # An executable with no sources still needs a translation unit to configure; give it
+    # the same placeholder fallback as source-less libraries (see issue #7).
+    if(NOT sources)
+      _targets_dummy_source(dummy_file)
+      list(APPEND sources "${dummy_file}")
+      source_group("CMake Rules" FILES "${dummy_file}")
     endif()
     add_executable(${args_TARGET} ${sources} ${headers})
     set(_is_interface_library FALSE)
