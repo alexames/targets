@@ -6,6 +6,17 @@ add_test(
   COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_LIST_DIR}/unit/test_parse_platforms.cmake"
 )
 
+# A trailing LITERAL escape marker with no value must FATAL_ERROR (issue #12).
+# Same script, driven with -DSCENARIO=escape_error; passes iff the diagnostic
+# is emitted.
+add_test(
+  NAME parse_platforms_escape_error
+  COMMAND "${CMAKE_COMMAND}" -DSCENARIO=escape_error
+    -P "${CMAKE_CURRENT_LIST_DIR}/unit/test_parse_platforms.cmake"
+)
+set_tests_properties(parse_platforms_escape_error PROPERTIES
+  PASS_REGULAR_EXPRESSION "escape marker 'LITERAL'")
+
 # Configure-mode integration tests: each configures a small project that exercises a
 # rule and asserts the result. A non-zero configure exit (e.g. a FATAL_ERROR) fails
 # the test.

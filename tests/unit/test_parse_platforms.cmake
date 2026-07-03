@@ -5,6 +5,15 @@ cmake_minimum_required(VERSION 3.20)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/core/platform_parser.cmake")
 
+# Negative scenario: a trailing escape marker with no value must FATAL_ERROR.
+# Selected with -DSCENARIO=escape_error; paired with PASS_REGULAR_EXPRESSION in
+# the CTest harness. Returns before the positive suite because a FATAL_ERROR
+# aborts the whole script.
+if(SCENARIO STREQUAL "escape_error")
+  _targets_parse_platforms_for(out "WINDOWS" a.cpp LITERAL)
+  message(FATAL_ERROR "expected earlier FATAL_ERROR for trailing escape marker")
+endif()
+
 set(_failures 0)
 
 # assert_equal(<test-name> <expected-list> <actual-list>)
@@ -141,6 +150,54 @@ _targets_parse_platforms_for(out "WINDOWS"
   LINUX other.cpp
   WINDOWS b.cpp)
 assert_equal("repeated_platform_accumulates" "a.cpp;b.cpp" "${out}")
+
+# --- LITERAL escape marker (issue #12) -------------------------------------
+
+# 15. An escaped sentinel is a literal value in the unconditional bucket, not a
+#     section switch. Here the definition WINDOWS must survive on every platform.
+_targets_parse_platforms_for(out "LINUX" LITERAL WINDOWS)
+assert_equal("escaped_unconditional_value" "WINDOWS" "${out}")
+
+_targets_parse_platforms_for(out "WINDOWS" LITERAL WINDOWS)
+assert_equal("escaped_unconditional_value_same_platform" "WINDOWS" "${out}")
+
+# 16. The classic bug case: DEFINITIONS PUBLIC LINUX (PUBLIC already stripped by
+#     the access-specifier parse) — LITERAL forces LINUX through as a value
+#     rather than opening a Linux bucket that drops it on other platforms.
+_targets_parse_platforms_for(out "WINDOWS" LITERAL LINUX)
+assert_equal("escaped_define_collides_with_sentinel" "LINUX" "${out}")
+
+# 17. An escaped sentinel lands in the active platform bucket, not a new one.
+_targets_parse_platforms_for(out "WINDOWS"
+  common.cpp
+  WINDOWS win.cpp LITERAL LINUX
+  MACOS mac.cpp)
+assert_equal("escaped_value_in_active_bucket"
+  "common.cpp;win.cpp;LINUX"
+  "${out}")
+
+# 18. Only the immediately following token is escaped; a later bare sentinel
+#     still switches buckets as before (no behavior change for existing usage).
+_targets_parse_platforms_for(out "LINUX"
+  LITERAL WINDOWS
+  LINUX linux.cpp
+  MACOS mac.cpp)
+assert_equal("escape_is_single_token" "WINDOWS;linux.cpp" "${out}")
+
+# 19. The escape marker escapes itself: LITERAL LITERAL yields a literal LITERAL.
+_targets_parse_platforms_for(out "WINDOWS" a LITERAL LITERAL b)
+assert_equal("escape_marker_self_escape" "a;LITERAL;b" "${out}")
+
+# 20. Multiple independent escapes in one list.
+_targets_parse_platforms_for(out "MACOS"
+  LITERAL WINDOWS
+  LITERAL LINUX
+  DEFAULT stub.cpp)
+assert_equal("multiple_escapes" "WINDOWS;LINUX;stub.cpp" "${out}")
+
+# 21. A non-sentinel token after the marker is unaffected (marker still dropped).
+_targets_parse_platforms_for(out "WINDOWS" LITERAL foo.cpp)
+assert_equal("escape_non_sentinel" "foo.cpp" "${out}")
 
 # --- summary ---------------------------------------------------------------
 

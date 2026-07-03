@@ -234,9 +234,26 @@ cpp_library(
 The current build platform is auto-detected. Entries for the active platform (plus all
 unconditional entries) are kept; the rest are filtered out.
 
-> The sentinel words are reserved: a value literally equal to `WINDOWS`/`LINUX`/… can't
-> currently be passed through these arguments
-> ([#12](https://github.com/alexames/targets/issues/12)).
+### Escaping a literal sentinel value
+
+The sentinel words (`WINDOWS`, `LINUX`, `MACOS`, `ANDROID`, `EMSCRIPTEN`, `DEFAULT`) are
+reserved. To pass a value that is literally equal to one of them — most commonly a
+preprocessor definition such as `WINDOWS` or `LINUX` — precede it with the `LITERAL`
+escape marker. The marker is dropped and the next entry is added to the active bucket as
+an ordinary value instead of switching platform sections:
+
+```cmake
+cpp_library(
+    TARGET X
+    DEFINITIONS
+        PUBLIC LITERAL WINDOWS        # defines the macro WINDOWS on every platform
+        WINDOWS LITERAL LINUX         # defines the macro LINUX only on Windows
+)
+```
+
+`LITERAL` escapes exactly the one entry that follows it, so a later bare sentinel still
+opens a section as usual. The marker escapes itself too: `LITERAL LITERAL` emits a literal
+`LITERAL`. A trailing `LITERAL` with nothing after it is a hard error.
 
 ## Dependency management & namespaces
 
