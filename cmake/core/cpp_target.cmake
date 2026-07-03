@@ -31,6 +31,7 @@ get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/dependencies/import_dependencies.cmake")
 include("${_TARGETS_MODULE_DIR}/platform_parser.cmake")
 include("${_TARGETS_MODULE_DIR}/install_export.cmake")
+include("${_TARGETS_MODULE_DIR}/toolchain_hygiene.cmake")
 
 # Reject arguments that cmake_parse_arguments could not assign to a known keyword.
 #
@@ -141,7 +142,9 @@ function(cpp_target)
     UNITY_BUILD
     INSTALL                   # Generate install + export rules (issue #20)
     EXPORT_HEADER             # Generate a GenerateExportHeader export header (issue #21)
-    WINDOWS_EXPORT_ALL_SYMBOLS)  # Auto-export all symbols of a SHARED library (issue #21)
+    WINDOWS_EXPORT_ALL_SYMBOLS  # Auto-export all symbols of a SHARED library (issue #21)
+    WERROR                    # Opt-in: treat warnings as errors (issue #23)
+    LTO)                      # Opt-in: link-time (interprocedural) optimization (issue #23)
   set(one_value_args
     TYPE                      # LIBRARY or EXECUTABLE (required)
     TARGET                    # Target name (required)
@@ -156,6 +159,7 @@ function(cpp_target)
     SOVERSION                 # ABI version
     UNITY_BUILD_BATCH_SIZE    # Files per unity chunk (default: 16)
     NAMESPACE_ROOT            # Root for namespace generation (default: PROJECT_SOURCE_DIR/Source)
+    WARNINGS                  # Opt-in warning level: off | default | strict (issue #23)
   )
   set(multi_value_args
     SOURCES                   # Source files
@@ -165,6 +169,7 @@ function(cpp_target)
     DEPENDENCIES              # Link libraries (with PUBLIC/PRIVATE)
     PROPERTIES                # Additional CMake properties
     PRECOMPILE_HEADERS        # Headers to precompile
+    SANITIZERS                # Opt-in sanitizers, e.g. address undefined (issue #23)
   )
   cmake_parse_arguments(
     PARSE_ARGV 0
@@ -186,6 +191,10 @@ function(cpp_target)
   if(NOT args_TARGET)
     message(FATAL_ERROR "cpp_target: TARGET argument is required")
   endif()
+
+  # Validate the opt-in warning level up front (issue #23), for every target type, so a
+  # misspelled level fails fast with the same message on compiled and header-only targets.
+  _targets_validate_warnings("cpp_target" "${args_WARNINGS}")
 
   # EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS are two mutually exclusive strategies for
   # exporting a SHARED library's symbols: the former annotates the public API with generated
@@ -452,6 +461,21 @@ function(cpp_target)
     if(args_WINDOWS_EXPORT_ALL_SYMBOLS)
       list(APPEND ignored_args "WINDOWS_EXPORT_ALL_SYMBOLS")
     endif()
+    # The opt-in toolchain hygiene knobs (issue #23) are compile/link settings with nothing
+    # to compile on a header-only INTERFACE library. WARNINGS is only reported when the
+    # caller passed the keyword (DEFINED), so an omitted level is never flagged.
+    if(DEFINED args_WARNINGS)
+      list(APPEND ignored_args "WARNINGS")
+    endif()
+    if(args_WERROR)
+      list(APPEND ignored_args "WERROR")
+    endif()
+    if(args_SANITIZERS)
+      list(APPEND ignored_args "SANITIZERS")
+    endif()
+    if(args_LTO)
+      list(APPEND ignored_args "LTO")
+    endif()
     if(ignored_args)
       string(REPLACE ";" ", " ignored_args "${ignored_args}")
       message(WARNING
@@ -648,6 +672,26 @@ function(cpp_target)
         set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD_BATCH_SIZE 16)
       endif()
     endif()
+
+    # Apply the opt-in toolchain hygiene knobs last, so they layer on top of the target's
+    # own compile/link options (issue #23). Each is a no-op unless the caller opted in, so
+    # this changes nothing for existing targets. Only the keywords the caller actually gave
+    # are forwarded: passing an empty WARNINGS/SANITIZERS would trip CMP0174's dev warning
+    # in the common opt-out case, so they are appended only when present.
+    set(_hygiene_args TARGET ${args_TARGET})
+    if(NOT "${args_WARNINGS}" STREQUAL "")
+      list(APPEND _hygiene_args WARNINGS "${args_WARNINGS}")
+    endif()
+    if(args_SANITIZERS)
+      list(APPEND _hygiene_args SANITIZERS ${args_SANITIZERS})
+    endif()
+    if(args_WERROR)
+      list(APPEND _hygiene_args WERROR)
+    endif()
+    if(args_LTO)
+      list(APPEND _hygiene_args LTO)
+    endif()
+    _targets_apply_toolchain_hygiene(${_hygiene_args})
   endif()
 
   # Set IDE folder. FOLDER is valid on every target type -- executables, compiled

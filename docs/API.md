@@ -25,6 +25,10 @@ cpp_library(
     [PRECOMPILE_HEADERS <header>...]
     [UNITY_BUILD <ON|OFF>]
     [UNITY_BUILD_BATCH_SIZE <number>]
+    [WARNINGS <off|default|strict>]
+    [WERROR]
+    [SANITIZERS <name>...]
+    [LTO]
     [INSTALL]
     [EXPORT <export-set>]
 )
@@ -67,6 +71,18 @@ cpp_library(
 - **PRECOMPILE_HEADERS**: Headers to precompile for faster builds
 - **UNITY_BUILD**: Enable unity/jumbo builds (ON/OFF)
 - **UNITY_BUILD_BATCH_SIZE**: Number of files per unity chunk (default: 16)
+- **WARNINGS**: Opt-in warning level — `off` | `default` | `strict`. `strict` maps to `/W4`
+  (MSVC) or `-Wall -Wextra -Wpedantic` (GCC/Clang); `off` maps to `/W0` or `-w`; `default`
+  (and omitting the keyword) injects nothing. An invalid level is a configure-time error.
+  See the **Toolchain hygiene** subsection below.
+- **WERROR**: Flag — treat warnings as errors (`/WX` on MSVC, `-Werror` on GCC/Clang).
+- **SANITIZERS**: Opt-in sanitizer list (e.g. `address undefined`). On GCC/Clang the
+  `-fsanitize=<list>` flag is added to **both** compile and link; MSVC honors only
+  `address` (as `/fsanitize=address`, non-Debug configurations only — Debug's `/RTC1` and
+  `/ZI` are incompatible) and skips other sanitizers with a warning.
+- **LTO**: Flag — enable link-time (interprocedural) optimization by setting
+  `INTERPROCEDURAL_OPTIMIZATION`, gated on `check_ipo_supported()` so it no-ops with a
+  warning where unsupported.
 - **INSTALL**: Flag — opt the target into install/export rules so it is
   `find_package`-able downstream. See the **Installing & exporting libraries** subsection
   below.
@@ -117,8 +133,9 @@ arguments applies:
   usage-requirements), `CXX_STANDARD` (as an interface feature requirement), `FOLDER`, and
   `PROPERTIES`.
 - **Ignored with a warning:** the **PRIVATE** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`,
-  `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`, `EXPORT_HEADER`, and
-  `WINDOWS_EXPORT_ALL_SYMBOLS`. These only apply to a compiled target; supplying them emits a
+  `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`, `EXPORT_HEADER`,
+  `WINDOWS_EXPORT_ALL_SYMBOLS`, and the toolchain-hygiene knobs `WARNINGS`, `WERROR`,
+  `SANITIZERS`, and `LTO`. These only apply to a compiled target; supplying them emits a
   configure-time warning naming each ignored argument rather than dropping them silently.
 
 **SHARED libraries on Windows:**
@@ -532,3 +549,46 @@ non-INTERFACE targets:
 Non-MSVC toolchains (GCC, Clang, clang-cl) receive none of these flags. You can add or
 override any flag afterward with the standard `target_compile_options()` /
 `target_link_options()` commands.
+
+### Toolchain hygiene (opt-in)
+
+`cpp_library`, `cpp_binary`, and `cpp_test` accept four **opt-in** knobs for warnings and
+instrumentation. All are **off by default** (no target changes behavior unless it opts in)
+and each is translated to the compiler-appropriate flag via `CXX_COMPILER_ID` generator
+expressions, so MSVC-only and GCC/Clang-only forms never reach the wrong toolchain.
+
+```cmake
+cpp_library(
+    TARGET MyLib
+    SOURCES src/mylib.cpp
+    WARNINGS strict          # off | default | strict
+    WERROR                   # warnings as errors
+    SANITIZERS address undefined
+    LTO                      # link-time / interprocedural optimization
+)
+```
+
+| Knob | MSVC | GCC / Clang |
+|---|---|---|
+| `WARNINGS strict` | `/W4` | `-Wall -Wextra -Wpedantic` |
+| `WARNINGS off` | `/W0` | `-w` |
+| `WARNINGS default` (or omitted) | *nothing* | *nothing* |
+| `WERROR` | `/WX` | `-Werror` |
+| `SANITIZERS <list>` | `/fsanitize=address` (address only, non-Debug configs) | `-fsanitize=<list>` on compile **and** link |
+| `LTO` | `INTERPROCEDURAL_OPTIMIZATION` (`/GL` + `/LTCG`) | `INTERPROCEDURAL_OPTIMIZATION` (`-flto`) |
+
+- **`WARNINGS`** accepts exactly one level; an unrecognized value is a configure-time error.
+  `default` and an omitted keyword inject nothing.
+- **`SANITIZERS`** takes a list. On GCC/Clang the same `-fsanitize=` flag is applied to both
+  the compile and the link step (a sanitizer both instruments code and links a runtime).
+  MSVC provides only AddressSanitizer, so only `address` is honored there (as a compile
+  option — the linker links the runtime automatically); other requested sanitizers are
+  skipped with a warning. On MSVC, AddressSanitizer is applied to **non-Debug**
+  configurations only: Debug's runtime checks (`/RTC1`) and edit-and-continue (`/ZI`) are
+  incompatible with `/fsanitize=address`, so Debug is a no-op instead of a hard error.
+- **`LTO`** sets the `INTERPROCEDURAL_OPTIMIZATION` target property, gated on
+  `check_ipo_supported()`, so it degrades to a warning instead of a hard error where the
+  toolchain cannot do it.
+- These are compile/link settings and apply only to compiled targets. On a header-only
+  INTERFACE library they are ignored with the same configure-time warning as the other
+  compile-only arguments.

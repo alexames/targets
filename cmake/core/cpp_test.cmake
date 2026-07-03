@@ -118,7 +118,9 @@ function(cpp_test)
   set(options
     STATIC
     SHARED
-    UNITY_BUILD)
+    UNITY_BUILD
+    WERROR
+    LTO)
   set(one_value_args
     TYPE
     TARGET
@@ -131,7 +133,8 @@ function(cpp_test)
     VERSION
     SOVERSION
     UNITY_BUILD_BATCH_SIZE
-    NAMESPACE_ROOT)
+    NAMESPACE_ROOT
+    WARNINGS)
   set(multi_value_args
     SOURCES
     HEADERS
@@ -139,7 +142,8 @@ function(cpp_test)
     DEFINITIONS
     DEPENDENCIES
     PROPERTIES
-    PRECOMPILE_HEADERS)
+    PRECOMPILE_HEADERS
+    SANITIZERS)
   cmake_parse_arguments(
     PARSE_ARGV 0
     _test_args
