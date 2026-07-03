@@ -172,5 +172,6 @@ const std::size_t ${var_name}_size = ${data_length};
   # Organize in IDE
   source_group("Generated Files" FILES ${generated_sources} ${generated_headers})
 
-  message(STATUS "embed_binary: Created target ${args_TARGET} with ${list(LENGTH args_FILES)} embedded files")
+  list(LENGTH args_FILES num_files)
+  message(STATUS "embed_binary: Created target ${args_TARGET} with ${num_files} embedded files")
 endfunction()
