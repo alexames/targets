@@ -74,6 +74,17 @@ add_test(
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_source_group"
 )
 
+# dummy.cpp fallback and header-only INTERFACE detection (regression test for issue #7).
+# A library with HEADERS but no SOURCES must be an INTERFACE library with no dummy TU;
+# a library with neither SOURCES nor HEADERS must be a STATIC library carrying the shipped
+# dummy.cpp placeholder TU. A FATAL_ERROR in any assertion fails the test.
+add_test(
+  NAME cpp_target_dummy_source
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_dummy_source"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_dummy_source"
+)
+
 # MSVC compile/link flag scoping (regression test for issue #5). /ZI must never be
 # injected as an unconditional (Release-reaching) option and /SAFESEH:NO must not reach
 # non-x86 architectures, while /utf-8 stays unconditional. A FATAL_ERROR in any assertion

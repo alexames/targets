@@ -29,4 +29,21 @@ cpp_binary(
     PRIVATE Greeter
 )
 
+# Exercise the source-less STATIC fallback from the INSTALLED package layout (issue #7).
+# A library with neither SOURCES nor HEADERS must resolve the shipped dummy.cpp placeholder
+# TU from share/targets/cmake/dummy.cpp and build as a STATIC library. Previously the
+# fallback pointed at the wrong directory and the port shipped no dummy.cpp, so a port
+# consumer could never create such a target. This target is part of the default build, so
+# `cmake --build` compiles the installed dummy.cpp end-to-end.
+cpp_library(
+  TARGET GeneratedPlaceholder
+)
+
+get_target_property(_placeholder_type GeneratedPlaceholder TYPE)
+if(NOT _placeholder_type STREQUAL "STATIC_LIBRARY")
+  message(FATAL_ERROR
+    "source-less cpp_library must be STATIC_LIBRARY from the installed port, got "
+    "'${_placeholder_type}' (issue #7)")
+endif()
+
 message(STATUS "consume_port: found Targets via the installed port and defined targets")
