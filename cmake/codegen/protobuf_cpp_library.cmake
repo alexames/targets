@@ -50,18 +50,21 @@ define_property(TARGET PROPERTY PROTOBUF_IMPORT_DIRS
 #       DEPENDENCIES MyProtos
 #   )
 function(protobuf_cpp_library)
-  _targets_protobuf_cpp_library(${ARGN})
+  _targets_protobuf_cpp_library(FALSE ${ARGN})
 endfunction()
 
 function(grpc_cpp_library)
-  _targets_protobuf_cpp_library(GRPC ${ARGN})
+  _targets_protobuf_cpp_library(TRUE ${ARGN})
 endfunction()
 
-# Shared implementation of protobuf_cpp_library() and grpc_cpp_library(). The leading GRPC
-# option (injected by grpc_cpp_library) turns on gRPC service-stub generation and the
-# gRPC::grpc++ link; everything else is identical, so the two public rules stay in lockstep.
-function(_targets_protobuf_cpp_library)
-  set(options GRPC)
+# Shared implementation of protobuf_cpp_library() and grpc_cpp_library(). The leading
+# enable_grpc positional flag (TRUE only from grpc_cpp_library) turns on gRPC service-stub
+# generation and the gRPC::grpc++ link; everything else is identical, so the two public rules
+# stay in lockstep. The flag is a private positional -- not a parsed keyword -- so it never
+# appears in the public argument surface (a caller cannot smuggle gRPC generation into
+# protobuf_cpp_library) and is not advertised by the unknown-argument diagnostic.
+function(_targets_protobuf_cpp_library enable_grpc)
+  set(options)
   set(one_value_args
     TARGET
     PROTO_ROOT_DIR
@@ -74,23 +77,22 @@ function(_targets_protobuf_cpp_library)
     FLAGS
   )
 
+  # Parse from index 1: index 0 is the enable_grpc flag consumed above.
   cmake_parse_arguments(
-    PARSE_ARGV 0
+    PARSE_ARGV 1
     args
     "${options}"
     "${one_value_args}"
     "${multi_value_args}")
 
   # Name the calling rule in diagnostics.
-  if(args_GRPC)
+  if(enable_grpc)
     set(rule "grpc_cpp_library")
   else()
     set(rule "protobuf_cpp_library")
   endif()
 
   # Reject typo'd or misplaced arguments instead of silently ignoring them (see issue #4).
-  # GRPC is an internal option keyword; it is included so _targets_check_args recognizes it,
-  # but it is not part of the documented public surface.
   _targets_check_args("${rule}"
     "${args_UNPARSED_ARGUMENTS}"
     "${args_KEYWORDS_MISSING_VALUES}"
@@ -146,7 +148,7 @@ function(_targets_protobuf_cpp_library)
 
   # Locate the gRPC C++ plugin when generating service stubs.
   set(grpc_plugin_dependency "")
-  if(args_GRPC)
+  if(enable_grpc)
     if(TARGET gRPC::grpc_cpp_plugin)
       set(grpc_plugin_dependency gRPC::grpc_cpp_plugin)
       set(grpc_plugin "$<TARGET_FILE:gRPC::grpc_cpp_plugin>")
@@ -164,8 +166,10 @@ function(_targets_protobuf_cpp_library)
 
   # Build protoc's -I search path: this target's proto root, the caller's IMPORT_DIRS, and
   # the import roots exposed by proto dependencies (so cross-target `import` statements
-  # resolve during code generation).
+  # resolve during code generation). The dependency roots are also re-exported on this target
+  # (below) so the search path propagates transitively down a dependency chain.
   set(import_params "-I" "${args_PROTO_ROOT_DIR}")
+  set(exported_import_dirs "${args_PROTO_ROOT_DIR}")
   foreach(import_dir IN LISTS args_IMPORT_DIRS)
     if(NOT IS_ABSOLUTE "${import_dir}")
       set(import_dir "${CMAKE_CURRENT_LIST_DIR}/${import_dir}")
@@ -178,10 +182,12 @@ function(_targets_protobuf_cpp_library)
       if(dependency_import_dirs)
         foreach(dependency_import_dir IN LISTS dependency_import_dirs)
           list(APPEND import_params "-I" "${dependency_import_dir}")
+          list(APPEND exported_import_dirs "${dependency_import_dir}")
         endforeach()
       endif()
     endif()
   endforeach()
+  list(REMOVE_DUPLICATES exported_import_dirs)
 
   # Generated sources live in the build tree, out of the source root. protoc creates the
   # nested package subdirectories itself, so only the base directory must exist up front.
@@ -199,7 +205,12 @@ function(_targets_protobuf_cpp_library)
     # Predict protoc's output path: the proto's location relative to PROTO_ROOT_DIR with the
     # extension swapped. protoc mirrors that relative structure under --cpp_out.
     file(RELATIVE_PATH relative_proto "${args_PROTO_ROOT_DIR}" "${proto}")
-    if(IS_ABSOLUTE "${relative_proto}" OR relative_proto MATCHES "^\\.\\.")
+    # Precise out-of-root test (matches _targets_partition_files_by_root): a path on another
+    # drive stays absolute, and one above the root is ".." or begins "../". A leading-".." in
+    # the *filename* (e.g. "..foo.proto") is legitimately under the root and must not trip.
+    if(IS_ABSOLUTE "${relative_proto}"
+        OR relative_proto STREQUAL ".."
+        OR relative_proto MATCHES "^\\.\\./")
       message(FATAL_ERROR
         "${rule}: proto file '${proto}' is not located under PROTO_ROOT_DIR "
         "'${args_PROTO_ROOT_DIR}'. Set PROTO_ROOT_DIR to a directory that contains the "
@@ -213,7 +224,7 @@ function(_targets_protobuf_cpp_library)
     set(outputs "${pb_header}" "${pb_source}")
     set(protoc_args ${import_params} "--cpp_out=${generated_source_dir}")
 
-    if(args_GRPC)
+    if(enable_grpc)
       set(grpc_header "${generated_source_dir}/${relative_stem}.grpc.pb.h")
       set(grpc_source "${generated_source_dir}/${relative_stem}.grpc.pb.cc")
       list(APPEND outputs "${grpc_header}" "${grpc_source}")
@@ -237,7 +248,7 @@ function(_targets_protobuf_cpp_library)
 
     list(APPEND all_generated_headers "${pb_header}")
     list(APPEND all_generated_sources "${pb_source}")
-    if(args_GRPC)
+    if(enable_grpc)
       list(APPEND all_generated_headers "${grpc_header}")
       list(APPEND all_generated_sources "${grpc_source}")
     endif()
@@ -262,19 +273,31 @@ function(_targets_protobuf_cpp_library)
       "$<BUILD_INTERFACE:${generated_source_dir}>"
   )
 
-  # Record this target's import root so a dependent protobuf_cpp_library can add it to
-  # protoc's -I path.
-  set_property(TARGET ${args_TARGET} PROPERTY PROTOBUF_IMPORT_DIRS "${args_PROTO_ROOT_DIR}")
+  # protobuf-generated code requires at least C++17. The protobuf runtime target normally
+  # propagates a cxx_std_* compile feature, but the variable-only fallback below carries no
+  # usage requirements, so pin a floor here to keep the .pb.cc compiling regardless.
+  set_target_properties(${args_TARGET} PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON)
+
+  # Record this target's import roots (its own proto root plus every dependency's, so the set
+  # is transitive) for any dependent protobuf_cpp_library to add to protoc's -I path.
+  set_property(TARGET ${args_TARGET} PROPERTY PROTOBUF_IMPORT_DIRS "${exported_import_dirs}")
 
   # Link the protobuf runtime (and the gRPC C++ runtime for service stubs). Their include
   # directories flow to consumers as usage requirements.
   if(TARGET protobuf::libprotobuf)
     target_link_libraries(${args_TARGET} PUBLIC protobuf::libprotobuf)
   elseif(Protobuf_LIBRARIES)
+    # Old-style FindProtobuf variables carry no usage requirements, so the protobuf headers
+    # must be added explicitly or the generated code cannot find <google/protobuf/...>.
     target_link_libraries(${args_TARGET} PUBLIC ${Protobuf_LIBRARIES})
+    if(Protobuf_INCLUDE_DIRS)
+      target_include_directories(${args_TARGET} PUBLIC ${Protobuf_INCLUDE_DIRS})
+    endif()
   endif()
 
-  if(args_GRPC AND TARGET gRPC::grpc++)
+  if(enable_grpc AND TARGET gRPC::grpc++)
     target_link_libraries(${args_TARGET} PUBLIC gRPC::grpc++)
   endif()
 

@@ -3,8 +3,9 @@
 #
 # Requires Protocol Buffers (and, for the gRPC portion, gRPC). Install via vcpkg:
 #   vcpkg install protobuf grpc
-# The enclosing examples/CMakeLists.txt only adds this example when Protobuf is found, so a
-# toolchain without it is skipped rather than failing to configure.
+# Detection happens here -- inside this CXX project scope, not the language-less examples
+# aggregate -- and the example returns early when Protobuf is unavailable, so a toolchain
+# without it still configures and builds cleanly.
 
 cmake_minimum_required(VERSION 3.20)
 project(ExampleProtobuf VERSION 1.0.0 LANGUAGES CXX)
@@ -13,7 +14,14 @@ project(ExampleProtobuf VERSION 1.0.0 LANGUAGES CXX)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../cmake")
 include(Targets)
 
-find_package(Protobuf REQUIRED)
+# Probe for Protocol Buffers in this CXX scope (find_package(Protobuf) needs an enabled
+# language). protobuf_cpp_library needs protoc specifically, so gate on it and skip cleanly
+# when it is not discoverable.
+find_package(Protobuf QUIET)
+if(NOT (TARGET protobuf::protoc OR Protobuf_PROTOC_EXECUTABLE))
+    message(STATUS "Example: codegen_protobuf - Protocol Buffers (protoc) not found; skipping")
+    return()
+endif()
 
 # Generate a C++ library from the message schema.
 protobuf_cpp_library(
