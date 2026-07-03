@@ -43,6 +43,7 @@ cpp_binary(
   - [Common arguments](#common-arguments)
 - [Installing & exporting libraries](#installing--exporting-libraries)
 - [SHARED libraries on Windows](#shared-libraries-on-windows)
+- [Toolchain hygiene](#toolchain-hygiene)
 - [Platform-conditional entries](#platform-conditional-entries)
 - [Dependency management & namespaces](#dependency-management--namespaces)
 - [Code generation](#code-generation)
@@ -131,10 +132,11 @@ A header-only INTERFACE library carries the arguments that make sense for it: th
 **PUBLIC** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES` (applied as interface
 usage-requirements), plus `FOLDER` and `PROPERTIES`. Arguments that only apply to a
 compiled target — **PRIVATE** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`, `VERSION`,
-`SOVERSION`, `PRECOMPILE_HEADERS`, and `UNITY_BUILD` — have no meaning on an INTERFACE
-library (it has no private compile step and produces no built artifact). Rather than
-being dropped silently, they are ignored with a configure-time **warning** naming exactly
-which arguments were skipped.
+`SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`, and the [toolchain-hygiene](#toolchain-hygiene)
+knobs (`WARNINGS`/`WERROR`/`SANITIZERS`/`LTO`) — have no meaning on an INTERFACE library (it
+has no private compile step and produces no built artifact). Rather than being dropped
+silently, they are ignored with a configure-time **warning** naming exactly which arguments
+were skipped.
 
 ```cmake
 cpp_library(
@@ -207,6 +209,10 @@ no-op — it creates no target and never acquires Google Test.
 | `PRECOMPILE_HEADERS` | all | Headers to precompile. |
 | `UNITY_BUILD` | all | **Flag** — enable unity/jumbo build (presence = on). |
 | `UNITY_BUILD_BATCH_SIZE` | all | Files per unity chunk (default 16). |
+| `WARNINGS` | all (compiled) | Opt-in warning level: `off` \| `default` \| `strict`. See [Toolchain hygiene](#toolchain-hygiene). |
+| `WERROR` | all (compiled) | **Flag** — treat warnings as errors (`/WX` or `-Werror`). |
+| `SANITIZERS` | all (compiled) | Opt-in sanitizers, e.g. `address undefined` — instruments compile **and** link. |
+| `LTO` | all (compiled) | **Flag** — link-time (interprocedural) optimization when the toolchain supports it. |
 | `STATIC` / `SHARED` | `cpp_library` | **Flags** — library linkage (default STATIC); mutually exclusive, passing both errors. |
 | `EXPORT_HEADER` | `cpp_library` | **Flag** — generate a `<target>_export.h` (via `GenerateExportHeader`) exposing a `<TARGET>_EXPORT` macro, and set hidden-visibility defaults. See [SHARED libraries on Windows](#shared-libraries-on-windows). |
 | `WINDOWS_EXPORT_ALL_SYMBOLS` | `cpp_library` | **Flag** — auto-export every symbol of a SHARED library (alternative to `EXPORT_HEADER`; the two are mutually exclusive). |
@@ -310,6 +316,57 @@ Disable it globally with `-DTARGETS_STAGE_RUNTIME_DLLS=OFF`.
 A worked example (SHARED library + executable that links and runs it) lives in
 [`examples/shared_library`](examples/shared_library); CI builds **and runs** it on
 windows-latest, proving both the export and the staging.
+
+## Toolchain hygiene
+
+`cpp_library` / `cpp_binary` / `cpp_test` accept four **opt-in**, compiler-aware knobs for
+warnings and instrumentation. Every one is **off by default** — a target gets nothing
+unless it asks — and each translates to the right flag per compiler via `CXX_COMPILER_ID`
+generator expressions, so MSVC-only and GCC/Clang-only forms never leak to the wrong
+toolchain.
+
+```cmake
+cpp_library(
+    TARGET MyLib
+    SOURCES src/mylib.cpp
+    WARNINGS strict          # off | default | strict
+    WERROR                   # warnings as errors
+    SANITIZERS address undefined
+    LTO                      # link-time / interprocedural optimization
+)
+```
+
+| Knob | MSVC | GCC / Clang |
+|---|---|---|
+| `WARNINGS strict` | `/W4` | `-Wall -Wextra -Wpedantic` |
+| `WARNINGS off` | `/W0` | `-w` |
+| `WARNINGS default` (or omitted) | *nothing* | *nothing* |
+| `WERROR` | `/WX` | `-Werror` |
+| `SANITIZERS <list>` | `/fsanitize=address` (address only, non-Debug configs) | `-fsanitize=<list>` on **compile and link** |
+| `LTO` | `INTERPROCEDURAL_OPTIMIZATION` (`/GL` + `/LTCG`) | `INTERPROCEDURAL_OPTIMIZATION` (`-flto`) |
+
+Notes:
+
+- **`WARNINGS`** takes one level. `strict` raises the warning level; `off` silences
+  warnings; `default` (or omitting the keyword) injects nothing. Any other value is a
+  configure-time error.
+- **`SANITIZERS`** takes a list (`address`, `undefined`, `thread`, `leak`, …). On GCC/Clang
+  the `-fsanitize=` flag is applied to **both** compile and link (a sanitizer both
+  instruments code and pulls in a runtime). MSVC provides only AddressSanitizer, so only
+  `address` is honored there (as a compile option — the linker links the runtime
+  automatically); any other requested sanitizer is skipped with a warning. On MSVC,
+  AddressSanitizer is applied to **non-Debug configurations only** (Release / RelWithDebInfo):
+  the default Debug runtime checks (`/RTC1`) and edit-and-continue (`/ZI`) are incompatible
+  with `/fsanitize=address`, so Debug is a no-op rather than a hard compile error.
+- **`LTO`** sets the `INTERPROCEDURAL_OPTIMIZATION` target property, gated on
+  `check_ipo_supported()`, so it degrades to a warning (rather than a hard error) on a
+  toolchain that can't do it.
+- These are compile/link settings, so they apply only to compiled targets. On a header-only
+  **INTERFACE** library they are reported as ignored, consistent with the other
+  compile-only arguments ([#13](https://github.com/alexames/targets/issues/13)).
+
+A worked example (a library and executable built with `WARNINGS strict` and `LTO`) lives in
+[`examples/toolchain_hygiene`](examples/toolchain_hygiene); CI builds it on all three OSes.
 
 ## Platform-conditional entries
 

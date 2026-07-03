@@ -339,3 +339,96 @@ add_test(
 )
 set_tests_properties(cpp_library_export_on_executable PROPERTIES
   PASS_REGULAR_EXPRESSION "apply only to[ \t\r\n]+libraries")
+
+# Opt-in toolchain hygiene: WARNINGS / WERROR / SANITIZERS / LTO (issue #23). Each knob is
+# OFF by default and, when opted into, injects compiler-gated flags (via CXX_COMPILER_ID
+# generator expressions) into COMPILE_OPTIONS/LINK_OPTIONS or sets the
+# INTERPROCEDURAL_OPTIMIZATION property. Each scenario asserts the expected result and halts
+# before generation with a sentinel matched by PASS_REGULAR_EXPRESSION; the negative
+# scenarios pass iff the expected diagnostic is emitted. The "default" scenario proves no
+# knob changes an opt-out target.
+add_test(
+  NAME cpp_target_hygiene_default
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=default
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_default"
+)
+set_tests_properties(cpp_target_hygiene_default PROPERTIES
+  PASS_REGULAR_EXPRESSION "DEFAULT_OK")
+
+add_test(
+  NAME cpp_target_hygiene_warnings_strict
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=warnings_strict
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_warnings_strict"
+)
+set_tests_properties(cpp_target_hygiene_warnings_strict PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNINGS_STRICT_OK")
+
+add_test(
+  NAME cpp_target_hygiene_warnings_off
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=warnings_off
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_warnings_off"
+)
+set_tests_properties(cpp_target_hygiene_warnings_off PROPERTIES
+  PASS_REGULAR_EXPRESSION "WARNINGS_OFF_OK")
+
+add_test(
+  NAME cpp_target_hygiene_warnings_invalid
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=warnings_invalid
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_warnings_invalid"
+)
+set_tests_properties(cpp_target_hygiene_warnings_invalid PROPERTIES
+  PASS_REGULAR_EXPRESSION "is not a valid level")
+
+add_test(
+  NAME cpp_target_hygiene_werror
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=werror
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_werror"
+)
+set_tests_properties(cpp_target_hygiene_werror PROPERTIES
+  PASS_REGULAR_EXPRESSION "WERROR_OK")
+
+add_test(
+  NAME cpp_target_hygiene_sanitizers
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=sanitizers
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_sanitizers"
+)
+set_tests_properties(cpp_target_hygiene_sanitizers PROPERTIES
+  PASS_REGULAR_EXPRESSION "SANITIZERS_OK")
+
+# LTO enables CXX (check_ipo_supported probes the compiler), so this scenario needs a C++
+# toolchain like the MSVC-flags test. It asserts the property is ON when IPO is supported
+# and skipped otherwise, so it is robust across toolchains.
+add_test(
+  NAME cpp_target_hygiene_lto
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=lto
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_lto"
+)
+set_tests_properties(cpp_target_hygiene_lto PROPERTIES
+  PASS_REGULAR_EXPRESSION "LTO_OK")
+
+add_test(
+  NAME cpp_target_hygiene_interface_warns
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=interface_warns
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_interface_warns"
+)
+# The warning message is word-wrapped by CMake, so match the key phrase with whitespace-
+# tolerant separators (as the export-conflict tests above do) rather than a fixed-space
+# string that a line break could split.
+set_tests_properties(cpp_target_hygiene_interface_warns PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled[ \t\r\n]+target[ \t\r\n]+and[ \t\r\n]+were[ \t\r\n]+ignored")
