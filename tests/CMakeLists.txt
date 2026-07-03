@@ -435,3 +435,81 @@ add_test(
 # string that a line break could split.
 set_tests_properties(cpp_target_hygiene_interface_warns PROPERTIES
   PASS_REGULAR_EXPRESSION "compiled[ \t\r\n]+target[ \t\r\n]+and[ \t\r\n]+were[ \t\r\n]+ignored")
+
+# protobuf_cpp_library / grpc_cpp_library codegen rules (issue #26). These configure-mode
+# scenarios run with NO protoc or gRPC plugin installed (CI has neither), so they never
+# invoke code generation. Argument validation (missing TARGET/PROTOS, unknown keyword) and
+# the point-of-use "tool not found" diagnostics pass iff the expected FATAL_ERROR is emitted.
+# The "wiring" scenarios fake protoc/plugin discovery via the executable variables, assert
+# the resulting custom-command wiring and target shape, and halt before generation with a
+# sentinel. The real end-to-end codegen path is exercised by the guarded
+# examples/codegen_protobuf example when protobuf is available.
+add_test(
+  NAME protobuf_cpp_library_missing_target
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=missing_target
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/protobuf_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/protobuf_cpp_library_missing_target"
+)
+set_tests_properties(protobuf_cpp_library_missing_target PROPERTIES
+  PASS_REGULAR_EXPRESSION "TARGET must be provided")
+
+add_test(
+  NAME protobuf_cpp_library_missing_protos
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=missing_protos
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/protobuf_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/protobuf_cpp_library_missing_protos"
+)
+set_tests_properties(protobuf_cpp_library_missing_protos PROPERTIES
+  PASS_REGULAR_EXPRESSION "PROTOS must be provided")
+
+add_test(
+  NAME protobuf_cpp_library_unknown_arg
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=unknown_arg
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/protobuf_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/protobuf_cpp_library_unknown_arg"
+)
+set_tests_properties(protobuf_cpp_library_unknown_arg PROPERTIES
+  PASS_REGULAR_EXPRESSION "unrecognized argument")
+
+add_test(
+  NAME protobuf_cpp_library_no_protoc
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=no_protoc
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/protobuf_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/protobuf_cpp_library_no_protoc"
+)
+set_tests_properties(protobuf_cpp_library_no_protoc PROPERTIES
+  PASS_REGULAR_EXPRESSION "protoc not found")
+
+add_test(
+  NAME grpc_cpp_library_no_plugin
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=no_grpc_plugin
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/protobuf_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/protobuf_cpp_library_no_grpc_plugin"
+)
+set_tests_properties(grpc_cpp_library_no_plugin PROPERTIES
+  PASS_REGULAR_EXPRESSION "grpc_cpp_plugin not found")
+
+add_test(
+  NAME protobuf_cpp_library_wiring
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=wiring
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/protobuf_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/protobuf_cpp_library_wiring"
+)
+set_tests_properties(protobuf_cpp_library_wiring PROPERTIES
+  PASS_REGULAR_EXPRESSION "WIRING_OK")
+
+add_test(
+  NAME grpc_cpp_library_wiring
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=grpc_wiring
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/protobuf_cpp_library"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/protobuf_cpp_library_grpc_wiring"
+)
+set_tests_properties(grpc_cpp_library_wiring PROPERTIES
+  PASS_REGULAR_EXPRESSION "GRPC_WIRING_OK")

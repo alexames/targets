@@ -364,6 +364,75 @@ flatbuffer_cpp_library(
 
 ---
 
+### `protobuf_cpp_library()` / `grpc_cpp_library()`
+
+Generate a C++ library from Protocol Buffers schemas. `protobuf_cpp_library()` runs
+`protoc` to produce message sources (`*.pb.cc` / `*.pb.h`) and links the protobuf runtime;
+`grpc_cpp_library()` takes the same arguments and additionally runs the gRPC C++ plugin to
+produce service stubs (`*.grpc.pb.cc` / `*.grpc.pb.h`) and links `gRPC::grpc++`.
+
+```cmake
+protobuf_cpp_library(
+    TARGET <name>
+    PROTOS <proto>...
+    [PROTO_ROOT_DIR <dir>]
+    [IMPORT_DIRS <dir>...]
+    [NAMESPACE_ROOT <dir>]
+    [DEPENDENCIES <target>...]
+    [FLAGS <flag>...]
+)
+
+grpc_cpp_library(
+    TARGET <name>
+    PROTOS <proto>...
+    # ...same arguments as protobuf_cpp_library...
+)
+```
+
+**Parameters:**
+
+- **TARGET** (required): Name of the generated library target
+- **PROTOS** (required): List of `.proto` files
+- **PROTO_ROOT_DIR**: Root for resolving proto imports and the generated output layout;
+  protoc's primary `-I`. Default: the calling `CMakeLists.txt` directory. Proto files must
+  reside under this directory.
+- **IMPORT_DIRS**: Additional directories added to protoc's `-I` search path
+- **NAMESPACE_ROOT**: Root for the namespace alias / IDE folder. Default:
+  `${PROJECT_SOURCE_DIR}/Source` (matches `cpp_target()`)
+- **DEPENDENCIES**: Other proto library targets. They are linked `PUBLIC`, and their proto
+  import roots are added to protoc's `-I` path so cross-file `import` statements resolve.
+- **FLAGS**: Additional flags passed through to `protoc`
+
+**Requirements:**
+
+- `protoc` from `find_package(Protobuf)` (the `protobuf::protoc` target or the
+  `Protobuf_PROTOC_EXECUTABLE` variable). `grpc_cpp_library()` also needs the
+  `gRPC::grpc_cpp_plugin` target from `find_package(gRPC)`. Both are resolved at the point of
+  use, so `include(Targets)` remains side-effect free when these rules are unused. A missing
+  tool raises a clear `FATAL_ERROR`.
+
+**Example:**
+
+```cmake
+find_package(Protobuf REQUIRED)
+
+protobuf_cpp_library(
+    TARGET AddressBookProtos
+    PROTOS proto/addressbook.proto
+    PROTO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto"
+)
+
+find_package(gRPC REQUIRED)
+
+grpc_cpp_library(
+    TARGET GreeterServices
+    PROTOS proto/greeter.proto
+    DEPENDENCIES AddressBookProtos
+)
+```
+
+---
+
 ## Utility Functions
 
 ### `import_dependencies()`
