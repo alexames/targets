@@ -116,3 +116,29 @@ add_test(
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_embedded_subproject"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_embedded_subproject"
 )
+
+# BUILD_TESTING opt-out and include-time side effects (regression tests for issue #9).
+# cpp_test.cmake used to call enable_testing() at module-include time (directory-scoped,
+# so tests were dropped when Targets was first included from a subdirectory) and ignored
+# the standard CTest BUILD_TESTING option. With BUILD_TESTING=OFF, cpp_test() must create
+# no target and acquire no Google Test; and a bare include(Targets) must not enable
+# testing as a side effect. Each scenario prints a sentinel on success.
+add_test(
+  NAME cpp_test_build_testing_off
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=off
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_build_testing"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_build_testing_off"
+)
+set_tests_properties(cpp_test_build_testing_off PROPERTIES
+  PASS_REGULAR_EXPRESSION "BUILD_TESTING_OFF_OK")
+
+add_test(
+  NAME cpp_test_no_enable_testing_side_effect
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=no_side_effect
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_build_testing"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_build_testing_no_side_effect"
+)
+set_tests_properties(cpp_test_no_enable_testing_side_effect PROPERTIES
+  PASS_REGULAR_EXPRESSION "NO_SIDE_EFFECT_OK")

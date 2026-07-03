@@ -171,6 +171,14 @@ cpp_test(
 )
 ```
 
+**Enable testing at your top level.** `cpp_test` does not call `enable_testing()` for
+you — that command is directory-scoped, so enabling it from inside the module (wherever
+Targets first happens to be `include`d) can silently drop tests from `ctest`. Call
+`enable_testing()`, or the idiomatic `include(CTest)`, once in your **top-level**
+`CMakeLists.txt`. `cpp_test` also honors the standard `BUILD_TESTING` option (defined and
+default-on by `include(CTest)`): when `BUILD_TESTING` is `OFF`, `cpp_test()` becomes a
+no-op — it creates no target and never acquires Google Test.
+
 ### Common arguments
 
 | Argument | Rules | Meaning |
