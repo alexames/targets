@@ -83,6 +83,20 @@ cpp_library(
 )
 ```
 
+**Header-only (INTERFACE) libraries:**
+
+Passing `HEADERS` but no `SOURCES` produces an **INTERFACE** (header-only) library. Such a
+target has no private compile step and produces no built artifact, so only a subset of the
+arguments applies:
+
+- **Applied:** the **PUBLIC** `INCLUDES`, `DEFINITIONS`, and `DEPENDENCIES` (as interface
+  usage-requirements), `CXX_STANDARD` (as an interface feature requirement), `FOLDER`, and
+  `PROPERTIES`.
+- **Ignored with a warning:** the **PRIVATE** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`,
+  `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, and `UNITY_BUILD`. These only apply to a
+  compiled target; supplying them emits a configure-time warning naming each ignored
+  argument rather than dropping them silently.
+
 ---
 
 ### `cpp_binary()`

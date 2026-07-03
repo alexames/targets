@@ -124,6 +124,15 @@ Defines a C++ library. Produces a **STATIC** library by default, **SHARED** if y
 `SHARED`. If you provide `HEADERS` but no `SOURCES`, an **INTERFACE** (header-only)
 library is created automatically.
 
+A header-only INTERFACE library carries the arguments that make sense for it: the
+**PUBLIC** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES` (applied as interface
+usage-requirements), plus `FOLDER` and `PROPERTIES`. Arguments that only apply to a
+compiled target — **PRIVATE** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`, `VERSION`,
+`SOVERSION`, `PRECOMPILE_HEADERS`, and `UNITY_BUILD` — have no meaning on an INTERFACE
+library (it has no private compile step and produces no built artifact). Rather than
+being dropped silently, they are ignored with a configure-time **warning** naming exactly
+which arguments were skipped.
+
 ```cmake
 cpp_library(
     TARGET MyLib
