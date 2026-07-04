@@ -690,3 +690,21 @@ add_test(
 )
 set_tests_properties(cpp_test_allow_no_tests PROPERTIES
   PASS_REGULAR_EXPRESSION "ALLOW_NO_TESTS_OK")
+
+# Multi-directory Google Test visibility (regression test for issue #62). Lazy GTest
+# acquisition (#3) runs once per configure behind a global run-once guard, but the plain
+# find_package(GTest) it used created a directory-scoped GTest::gtest_main imported target. Any
+# cpp_test() in a directory OTHER than the one that first acquired GTest then failed at GENERATE
+# time with "links to GTest::gtest_main but the target was not found". This project
+# add_subdirectory's two sibling directories, each defining a cpp_test; a plain configure runs
+# the generate step too, so exit 0 proves both directories can link the now globally-promoted
+# GTest::gtest_main. A fake FindGTest supplies non-global imported GTest targets (no network, no
+# real Google Test); the exit code decides, so no PASS_REGULAR_EXPRESSION. LANGUAGES CXX is
+# needed to reproduce the real link path and is covered by each CI runner's default compiler --
+# the project only configures and generates, it is never built.
+add_test(
+  NAME cpp_test_multidir_gtest_visibility
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_multidir"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_multidir"
+)

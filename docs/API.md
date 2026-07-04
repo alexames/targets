@@ -318,7 +318,9 @@ cpp_binary(
 
 Define a C++ test executable. Google Test is acquired automatically on the first `cpp_test()`
 call — located with `find_package(GTest)`, or fetched with `FetchContent` if it isn't
-installed — so you do not need to provide it yourself.
+installed — so you do not need to provide it yourself. Acquisition happens once and the
+imported targets are promoted to global scope, so `cpp_test()` calls in sibling subdirectories
+all link against the same `GTest::gtest_main`.
 
 ```cmake
 cpp_test(
