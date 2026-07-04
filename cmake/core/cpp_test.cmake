@@ -21,11 +21,47 @@ function(_targets_acquire_gtest)
 
   # Check if Google Test is already available
   if(NOT TARGET GTest::gtest AND NOT TARGET gtest)
-    # Try to find Google Test
-    find_package(GTest QUIET)
+    # Try to find Google Test, promoting the imported targets it creates to GLOBAL scope.
+    # Acquisition runs at most once per configure (guarded by _TARGETS_GTEST_ACQUIRED), but a
+    # plain find_package(GTest) creates directory-scoped IMPORTED targets — visible only in the
+    # directory that first called cpp_test() and its subdirectories. Every OTHER directory then
+    # hits the run-once guard, skips acquisition, and cannot see GTest::gtest_main, so its
+    # target_link_libraries(... GTest::gtest_main) fails at generate time. That broke any project
+    # whose tests span sibling directories. See https://github.com/alexames/targets/issues/62.
+    #
+    # find_package's GLOBAL keyword (CMake >= 3.24) promotes the imported targets to global scope.
+    # On older CMake we promote each imported target explicitly via IMPORTED_GLOBAL, which is only
+    # settable from the directory that created the target — here, this very directory, where
+    # find_package just created them (guarding the already-global case, which cannot be re-set).
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+      find_package(GTest QUIET GLOBAL)
+    else()
+      find_package(GTest QUIET)
+      if(GTest_FOUND)
+        foreach(_targets_gtest_target
+            GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+          if(TARGET ${_targets_gtest_target})
+            get_target_property(_targets_gtest_is_global
+              ${_targets_gtest_target} IMPORTED_GLOBAL)
+            if(NOT _targets_gtest_is_global)
+              set_target_properties(${_targets_gtest_target}
+                PROPERTIES IMPORTED_GLOBAL TRUE)
+            endif()
+          endif()
+        endforeach()
+      endif()
+    endif()
 
     if(NOT GTest_FOUND)
       # Fall back to FetchContent if absent.
+      #
+      # This path needs no GLOBAL promotion. Unlike find_package's IMPORTED targets (directory
+      # scoped, hence the promotion above — issue #62), FetchContent_MakeAvailable(googletest)
+      # creates gtest/gtest_main — and the GTest::* ALIASes cpp_test() links — as REAL,
+      # add_subdirectory-defined targets. Regular buildsystem target names and their ALIASes
+      # resolve globally at generate time, so cpp_test() targets in sibling directories link
+      # GTest::gtest_main without issue. IMPORTED_GLOBAL does not apply to these non-imported
+      # targets, and is not needed. See https://github.com/alexames/targets/issues/62.
       include(FetchContent)
 
       # Add the fetched googletest with EXCLUDE_FROM_ALL so its targets are NOT part of the
