@@ -12,4 +12,4 @@
 # Keep this in sync with the "version" field in the root vcpkg.json and
 # ports/targets/vcpkg.json (JSON manifests cannot include CMake) and with the release
 # git tag (vX.Y.Z). See https://github.com/alexames/targets/issues/11.
-set(TARGETS_VERSION "0.10.0")
+set(TARGETS_VERSION "0.10.1")
