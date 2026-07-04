@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-03
+
+### Fixed
+
+- `cpp_test`: Google Test acquisition now makes the `GTest::*` targets globally visible, so
+  test targets defined across multiple sibling directories all link `GTest::gtest_main`. The
+  lazy acquisition added in 0.10.0 created the imported targets in only the first directory
+  that called `cpp_test()` (behind a run-once guard), so multi-directory projects failed to
+  generate with "GTest::gtest_main ... not found" ([#62]).
+
 ## [0.10.0] - 2026-07-03
 
 This release hardens the core rules, adds installation/export support, expands the
@@ -72,7 +82,8 @@ suite up to full coverage across Linux, macOS, and Windows.
 
 - Stale, private-project-specific artifacts `SUMMARY.md` and `INTEGRATION_GUIDE.md` ([#19]).
 
-[Unreleased]: https://github.com/alexames/targets/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/alexames/targets/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/alexames/targets/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/alexames/targets/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/alexames/targets/releases/tag/v0.9.0
 
@@ -102,3 +113,4 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#26]: https://github.com/alexames/targets/issues/26
 [#27]: https://github.com/alexames/targets/issues/27
 [#28]: https://github.com/alexames/targets/issues/28
+[#62]: https://github.com/alexames/targets/issues/62
