@@ -8,6 +8,39 @@ Targets is a pure-CMake library: it ships as CMake modules under [`cmake/`](cmak
 has no compiled runtime code. Keep that in mind when contributing — most changes are to
 `.cmake` modules, their examples, and their tests.
 
+## Repository layout
+
+```
+targets/
+├── cmake/
+│   ├── Targets.cmake              # entry point — includes every module
+│   ├── TargetsVersion.cmake       # single source of truth for the version
+│   ├── TargetsConfig.cmake.in     # package config template (find_package)
+│   ├── dummy.cpp                  # placeholder TU for source-less targets
+│   ├── core/
+│   │   ├── cpp_target.cmake        # the engine behind all core rules
+│   │   ├── cpp_library.cmake       # cpp_library wrapper
+│   │   ├── cpp_binary.cmake        # cpp_binary wrapper
+│   │   ├── cpp_test.cmake          # cpp_test wrapper (+ GTest integration)
+│   │   ├── install_export.cmake    # install/export rules (INSTALL/EXPORT)
+│   │   ├── toolchain_hygiene.cmake # WARNINGS/WERROR/SANITIZERS/LTO translation
+│   │   └── platform_parser.cmake   # platform-conditional argument filtering
+│   ├── dependencies/
+│   │   ├── import_dependencies.cmake  # namespace-based subdirectory import
+│   │   └── find_targets.cmake         # recursive target discovery
+│   ├── codegen/
+│   │   ├── flatbuffer_cpp_library.cmake
+│   │   └── protobuf_cpp_library.cmake  # protobuf_cpp_library + grpc_cpp_library
+│   └── utils/
+│       ├── set_folder_for_targets.cmake
+│       └── embed_binary.cmake
+├── examples/                      # buildable usage examples
+├── tests/                         # CTest suite (script-mode + configure-mode)
+├── ports/targets/                 # vcpkg overlay port
+├── docs/                          # API reference & migration guide
+└── CMakeLists.txt                 # builds examples + tests, install rules
+```
+
 ## Design goals
 
 Keep changes aligned with the project's design goals:
@@ -50,9 +83,20 @@ cmake -P tests/unit/test_parse_platforms.cmake
   `get_target_property` results, or checks for an expected `FATAL_ERROR` via
   `PASS_REGULAR_EXPRESSION` — is the cheapest reliable harness.
 
-Continuous integration builds the examples and runs the test suite on Linux, macOS, and
-Windows. Local testing usually covers only one OS, so rely on CI for cross-platform
-coverage and report your local results honestly in the PR.
+Continuous integration ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs four
+jobs, each on ubuntu-latest, windows-latest, and macos-latest:
+
+- **build-examples** — builds every example and runs the executable, shared-library, and
+  data-file ones.
+- **test-suite** — configures with `TARGETS_BUILD_TESTS=ON` and runs the full `ctest`
+  suite.
+- **install-export** — installs the `install_export` example and consumes it from a
+  separate project via `find_package(WidgetKit CONFIG REQUIRED)`.
+- **consume-port** — installs the in-repo vcpkg port and consumes it via
+  `find_package(Targets CONFIG REQUIRED)`.
+
+Local testing usually covers only one OS, so rely on CI for cross-platform coverage and
+report your local results honestly in the PR.
 
 ## Branching and pull requests
 

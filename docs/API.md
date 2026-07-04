@@ -51,7 +51,7 @@ cpp_library(
   `<target>_export.h` (defining the `<TARGET>_EXPORT` macro) on the target's PUBLIC include
   path, and set `CXX_VISIBILITY_PRESET hidden` / `VISIBILITY_INLINES_HIDDEN`. This is how a
   SHARED library exports symbols portably (on MSVC it populates the import library so
-  consumers can link). See the **SHARED libraries on Windows** subsection below. Mutually
+  consumers can link). See [SHARED libraries on Windows](#shared-libraries-on-windows). Mutually
   exclusive with `WINDOWS_EXPORT_ALL_SYMBOLS`; rejected on executables; ignored with a warning
   on a header-only INTERFACE library.
 - **WINDOWS_EXPORT_ALL_SYMBOLS**: Flag — set the `WINDOWS_EXPORT_ALL_SYMBOLS` target property
@@ -105,7 +105,7 @@ cpp_library(
 - **WARNINGS**: Opt-in warning level — `off` | `default` | `strict`. `strict` maps to `/W4`
   (MSVC) or `-Wall -Wextra -Wpedantic` (GCC/Clang); `off` maps to `/W0` or `-w`; `default`
   (and omitting the keyword) injects nothing. An invalid level is a configure-time error.
-  See the **Toolchain hygiene** subsection below.
+  See [Toolchain hygiene (opt-in)](#toolchain-hygiene-opt-in).
 - **WERROR**: Flag — treat warnings as errors (`/WX` on MSVC, `-Werror` on GCC/Clang).
 - **SANITIZERS**: Opt-in sanitizer list (e.g. `address undefined`). On GCC/Clang the
   `-fsanitize=<list>` flag is added to **both** compile and link; MSVC honors only
@@ -115,8 +115,8 @@ cpp_library(
   `INTERPROCEDURAL_OPTIMIZATION`, gated on `check_ipo_supported()` so it no-ops with a
   warning where unsupported.
 - **INSTALL**: Flag — opt the target into install/export rules so it is
-  `find_package`-able downstream. See the **Installing & exporting libraries** subsection
-  below.
+  `find_package`-able downstream. See
+  [Installing & exporting libraries](#installing--exporting-libraries).
 - **EXPORT**: Name of the export set to add the target to (implies `INSTALL`). Defaults to
   `<Project>Targets` when `INSTALL` is given without `EXPORT`.
 
@@ -154,7 +154,7 @@ cpp_library(
 )
 ```
 
-**Header-only (INTERFACE) libraries:**
+#### Header-only (INTERFACE) libraries
 
 Passing `HEADERS` but no `SOURCES` produces an **INTERFACE** (header-only) library. Such a
 target has no private compile step and produces no built artifact, so only a subset of the
@@ -170,7 +170,7 @@ arguments applies:
   built artifact); supplying them emits a configure-time warning naming each ignored argument
   rather than dropping them silently.
 
-**SHARED libraries on Windows:**
+#### SHARED libraries on Windows
 
 A SHARED library needs its symbols exported and its DLL staged next to any executable that
 loads it; Targets handles both.
@@ -206,7 +206,7 @@ loads it; Targets handles both.
   **CMake ≥ 3.21**; on older CMake staging is skipped. Set `-DTARGETS_STAGE_RUNTIME_DLLS=OFF`
   to disable it globally.
 
-**Installing & exporting libraries:**
+#### Installing & exporting libraries
 
 By default a `cpp_library` target is build-tree-only: its public include directories are
 plain source paths and no install rules are generated, so a downstream project cannot
@@ -292,8 +292,9 @@ cpp_binary(
   `cpp_test`'s `ARGS`.
 - **COPTS** / **LINKOPTS** / **DATA**: See `cpp_library()` above — raw compile/link options and
   runtime data files. `DATA` is staged next to the executable after each build.
-- **INSTALL** / **EXPORT**: Install (and optionally export) the executable. See the
-  **Installing & exporting libraries** subsection under `cpp_library()`.
+- **INSTALL** / **EXPORT**: Install (and optionally export) the executable. See
+  [Installing & exporting libraries](#installing--exporting-libraries) under
+  `cpp_library()`.
 
 **Example:**
 
@@ -569,6 +570,39 @@ import_all(<directory>)
 ```cmake
 # In root CMakeLists.txt
 import_all("${CMAKE_CURRENT_SOURCE_DIR}/Source")
+```
+
+---
+
+### `find_targets()`
+
+Discover and add every subdirectory in a tree that contains a given file.
+
+```cmake
+find_targets(
+    [DIRECTORY <dir>]
+    [NAME <file>]
+)
+```
+
+**Parameters:**
+
+- **DIRECTORY**: Root of the tree to search recursively (default: the calling
+  `CMakeLists.txt` directory).
+- **NAME**: Filename to search for (default: `CMakeLists.txt`).
+
+Each directory **below** `DIRECTORY` containing a file named `NAME` is added with
+`add_subdirectory()` (a `STATUS` message logs every directory added). Compared to
+[`import_all()`](#import_all), the marker filename is configurable, so a build can key
+off a file other than `CMakeLists.txt`.
+
+**Example:**
+
+```cmake
+find_targets(
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Source"
+    NAME CMakeLists.txt
+)
 ```
 
 ---
