@@ -111,8 +111,8 @@ cpp_library(
 - **WERROR**: Flag — treat warnings as errors (`/WX` on MSVC, `-Werror` on GCC/Clang).
 - **SANITIZERS**: Opt-in sanitizer list (e.g. `address undefined`). On GCC/Clang the
   `-fsanitize=<list>` flag is added to **both** compile and link; MSVC honors only
-  `address` (as `/fsanitize=address`, non-Debug configurations only — Debug's `/RTC1` and
-  `/ZI` are incompatible) and skips other sanitizers with a warning.
+  `address` (as `/fsanitize=address`, non-Debug configurations only — Debug's `/RTC1` is
+  incompatible) and skips other sanitizers with a warning.
 - **LTO**: Flag — enable link-time (interprocedural) optimization by setting
   `INTERPROCEDURAL_OPTIMIZATION`, gated on `check_ipo_supported()` so it no-ops with a
   warning where unsupported.
@@ -869,13 +869,49 @@ non-INTERFACE targets:
 
 - **`/utf-8`** — always applied. Treats source and execution character sets as UTF-8.
 - **`/ZI`** (edit-and-continue debug info) — applied **only to Debug builds** (via a
-  `$<$<CONFIG:Debug>:...>` generator expression) and **only on x86/x64**. It is never
-  applied to Release (where it de-optimizes the build) and is skipped on ARM/ARM64
-  (where it is invalid). Set `-DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF` to suppress it
-  entirely.
+  `$<$<CONFIG:Debug>:...>` generator expression), **only on x86/x64**, and **only when no
+  compiler launcher is configured** (see below). It is never applied to Release (where it
+  de-optimizes the build) and is skipped on ARM/ARM64 (where it is invalid). Set
+  `-DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF` to suppress it entirely.
 - **`/SAFESEH:NO`** — applied **only to x86 (32-bit) executables and shared libraries**,
   where it has effect. It is a no-op on x64, invalid on ARM64, and ignored on static
   libraries, so it is not injected in those cases.
+
+#### Debug builds under a compiler cache
+
+When `CMAKE_CXX_COMPILER_LAUNCHER` is set — as
+[`targets_enable_compiler_cache()`](#targets_enable_compiler_cache) sets it — Debug targets
+get **embedded debug info (`/Z7`)** instead of `/ZI`, via the
+`MSVC_DEBUG_INFORMATION_FORMAT` target property. `/Zi` and `/ZI` route debug info into a
+`.pdb` shared by the whole target, which a cache hit cannot reproduce: ccache answers
+`unsupported_compiler_option` and compiles the translation unit uncached, so Debug hits
+nothing however the cache is configured. `/Z7` carries the same information in the object
+file.
+
+The launcher wins over `TARGETS_MSVC_EDIT_AND_CONTINUE` in both positions: a value you set to
+`ON` yourself is indistinguishable from the option's default, and `OFF` only ever meant
+"do not inject `/ZI`", not "leave Debug uncacheable". To keep edit-and-continue, configure
+without a compiler launcher.
+
+Details worth knowing:
+
+- **Other configurations are untouched.** RelWithDebInfo keeps `/Zi` and therefore keeps
+  missing the cache; Release is unaffected. Only Debug changes.
+- **Your own choice wins.** A project that sets `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`, or
+  passes `MSVC_DEBUG_INFORMATION_FORMAT` through `PROPERTIES`, keeps that format — on the
+  CMake versions and policy setting where that property decides the format at all (see the
+  next point).
+- **On CMake older than 3.25, or under `CMP0141 OLD`,** the debug format comes from
+  `CMAKE_CXX_FLAGS_DEBUG` rather than the property, which CMake then ignores. `/Z7` is
+  appended to the target instead: it overrides the `/Zi` in those flags for both the compiler
+  and the cache, and `cl.exe` reports `D9025` once per translation unit. Requiring CMake 3.25
+  or newer (or setting `CMP0141` to `NEW`) keeps the format out of the flags and silences
+  that.
+- **Any launcher counts**, including one CMake picked up from the
+  `CMAKE_CXX_COMPILER_LAUNCHER` *environment* variable, and including generators that ignore
+  compiler launchers altogether (Visual Studio, Xcode). Under those generators no cache runs,
+  so the swap costs edit-and-continue and buys nothing; unset the launcher for those build
+  trees.
 
 Non-MSVC toolchains (GCC, Clang, clang-cl) receive none of these flags. You can add or
 override any flag afterward with the standard `target_compile_options()` /
@@ -915,8 +951,8 @@ cpp_library(
   MSVC provides only AddressSanitizer, so only `address` is honored there (as a compile
   option — the linker links the runtime automatically); other requested sanitizers are
   skipped with a warning. On MSVC, AddressSanitizer is applied to **non-Debug**
-  configurations only: Debug's runtime checks (`/RTC1`) and edit-and-continue (`/ZI`) are
-  incompatible with `/fsanitize=address`, so Debug is a no-op instead of a hard error.
+  configurations only: Debug's runtime checks (`/RTC1`) are incompatible with
+  `/fsanitize=address`, so Debug is a no-op instead of a hard error.
 - **`LTO`** sets the `INTERPROCEDURAL_OPTIMIZATION` target property, gated on
   `check_ipo_supported()`, so it degrades to a warning instead of a hard error where the
   toolchain cannot do it.

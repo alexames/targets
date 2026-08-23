@@ -940,3 +940,72 @@ if(CMAKE_GENERATOR MATCHES "Visual Studio")
     PASS_REGULAR_EXPRESSION "ignores[ \t\r\n]+compiler[ \t\r\n]+launchers"
     FAIL_REGULAR_EXPRESSION "CMake[ \t\r\n]+Error")
 endif()
+
+# MSVC Debug debug-information format. A compile cache rejects a translation unit whose debug
+# info lands in a shared .pdb (/Zi, /ZI), so a configured compiler launcher has to move Debug
+# to the embedded format (/Z7) -- and has to leave the edit-and-continue behavior alone where
+# no launcher is configured. Every assertion is a FATAL_ERROR, so the exit code decides and
+# no scenario needs a PASS expression that would make CTest ignore it. The scenarios run on
+# every toolchain: off MSVC they assert none of these flags leaked there.
+add_test(
+  NAME cpp_target_debug_format_no_launcher
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=no_launcher
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_no_launcher"
+)
+
+# CMP0141 left OLD, so CMake spells the debug format in CMAKE_CXX_FLAGS_DEBUG and only a
+# later flag can override it. The stripped variant takes that /Zi back out: the policy, not
+# the flags it happens to produce, is what decides whether the property is honored, and a
+# project that edits its own Debug flags must not strand Debug on a property CMake ignores.
+add_test(
+  NAME cpp_target_debug_format_launcher_flags
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=launcher_flags
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_launcher_flags"
+)
+
+add_test(
+  NAME cpp_target_debug_format_launcher_flags_stripped
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=launcher_flags_stripped
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_launcher_flags_stripped"
+)
+
+# The scenarios that need CMP0141 NEW, where MSVC_DEBUG_INFORMATION_FORMAT is the route.
+# Registered only when the CMake running them knows that policy, since the fixture sets it
+# explicitly. Besides the property itself they pin the two ways the override stands down: a
+# format the project named for itself is kept, while TARGETS_MSVC_EDIT_AND_CONTINUE=OFF is
+# not an opt-out, having only ever governed /ZI.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
+  add_test(
+    NAME cpp_target_debug_format_launcher_property
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=launcher_property
+      -DDEBUG_FORMAT_POLICY=NEW
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_launcher_property"
+  )
+
+  add_test(
+    NAME cpp_target_debug_format_launcher_user_format
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=launcher_user_format
+      -DDEBUG_FORMAT_POLICY=NEW
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_launcher_user_format"
+  )
+
+  add_test(
+    NAME cpp_target_debug_format_launcher_edit_and_continue_off
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=launcher_edit_and_continue_off
+      -DDEBUG_FORMAT_POLICY=NEW
+      -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_edit_and_continue_off"
+  )
+endif()
