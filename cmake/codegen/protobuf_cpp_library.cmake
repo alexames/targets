@@ -259,6 +259,11 @@ function(_targets_protobuf_cpp_library enable_grpc)
   # placeholder is required.
   add_library(${args_TARGET} STATIC)
 
+  # The CXX_STANDARD 17 this rule pins is a floor, not a ceiling: a dependency's INTERFACE
+  # cxx_std_* compile feature raises the standard this target is compiled at above it, while
+  # the property keeps reading 17.
+  _targets_apply_common_target_defaults(${args_TARGET})
+
   target_sources(${args_TARGET}
     PRIVATE
       ${all_generated_sources}

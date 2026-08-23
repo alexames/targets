@@ -1030,3 +1030,62 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
       -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_edit_and_continue_off"
   )
 endif()
+
+# Target-wide settings must reach every compiled target, not only the ones cpp_target creates.
+# flatbuffer_cpp_library, protobuf_cpp_library and embed_binary each build their target with
+# their own add_library(), so they carry only what they apply themselves.
+#
+# The coverage scan reads the shipped CMake sources, so it covers a rule no test exercises;
+# self_check reruns it against a copy in the build tree with one call deleted. Both decide by
+# exit code, so neither needs a PASS expression.
+add_test(
+  NAME common_target_defaults_coverage
+  COMMAND "${CMAKE_COMMAND}"
+    -P "${CMAKE_CURRENT_LIST_DIR}/unit/test_common_target_defaults_coverage.cmake"
+)
+
+add_test(
+  NAME common_target_defaults_coverage_self_check
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=self_check
+    "-DMUTATED_DIR=${CMAKE_CURRENT_BINARY_DIR}/unit/common_target_defaults_mutated"
+    -P "${CMAKE_CURRENT_LIST_DIR}/unit/test_common_target_defaults_coverage.cmake"
+)
+
+# The behavior itself, on targets the three rules really create. Both scenarios put those
+# targets in module-scanning range and then assert the settings arrived -- CXX_SCAN_FOR_MODULES
+# OFF, and /utf-8 on MSVC. Registered only on a CMake that knows CMP0155, which the fixture
+# requires: below it CMake never scans and the assertions would hold for the wrong reason.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+  add_test(
+    NAME codegen_target_defaults_global_standard
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=global_standard
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/codegen_target_defaults"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/codegen_target_defaults_global_standard"
+  )
+
+  add_test(
+    NAME codegen_target_defaults_interface_propagation
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=interface_propagation
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/codegen_target_defaults"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/codegen_target_defaults_interface_propagation"
+  )
+
+  # What the interface_propagation scenario cannot check for itself: that a header-only
+  # cpp_library dependency really does raise a codegen target to C++20 or later. The raise
+  # happens at generate time and leaves CXX_STANDARD reading whatever the rule set, so this
+  # one compiles a probe and lets the compiler report the standard it was given. Without it,
+  # interface_propagation asserts scanning is off on a target nothing proved was in scanning
+  # range.
+  add_test(
+    NAME codegen_target_defaults_effective_standard
+    COMMAND "${CMAKE_COMMAND}"
+      "-DFIXTURE_DIR=${CMAKE_CURRENT_LIST_DIR}/integration/codegen_target_defaults/effective_standard"
+      "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/integration/codegen_target_defaults_effective_standard"
+      "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+      "-DTEST_CONFIG=$<CONFIG>"
+      -P "${CMAKE_CURRENT_LIST_DIR}/integration/codegen_target_defaults/effective_standard.cmake"
+  )
+endif()

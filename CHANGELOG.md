@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `flatbuffer_cpp_library`, `protobuf_cpp_library`, `grpc_cpp_library`, and `embed_binary`
+  now carry the same target-wide settings as `cpp_library`/`cpp_binary`/`cpp_test`:
+  `CXX_SCAN_FOR_MODULES OFF`, and on MSVC `/utf-8` plus the Debug debug-information format
+  that a compiler launcher can cache. Each of these rules built its target with its own
+  `add_library()`, so nothing applied in `cpp_target` ever reached it. The gap is not
+  theoretical for module scanning: these rules do not default the standard to 23, but a
+  project-wide `CMAKE_CXX_STANDARD` of 20 or later puts their targets in scanning range, and
+  so does a dependency on a header-only `cpp_library`, whose `INTERFACE` `cxx_std_23` compile
+  feature raises the standard its consumers are compiled at regardless of their own
+  `CXX_STANDARD` ([#70]).
+- The settings every compiled target carries moved into one shared helper that all four
+  creation sites call, and a new `common_target_defaults_coverage` test reads the shipped
+  CMake sources and fails on any rule that creates a compiled target without calling it. A
+  rule added later cannot silently miss them again ([#70]).
+
 ## [0.11.0] - 2026-08-23
 
 ### Added
@@ -160,6 +177,7 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#27]: https://github.com/alexames/targets/issues/27
 [#28]: https://github.com/alexames/targets/issues/28
 [#62]: https://github.com/alexames/targets/issues/62
+[#70]: https://github.com/alexames/targets/issues/70
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355
