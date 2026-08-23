@@ -93,7 +93,9 @@ cpp_library(
   next to the built artifact (`$<TARGET_FILE_DIR>`) via a POST_BUILD step, so the program
   finds them by a relative path when launched from the build tree. Honors the same platform
   buckets as the other lists. Ignored with a warning on a header-only INTERFACE library.
-- **CXX_STANDARD**: C++ standard version (11, 14, 17, 20, 23, etc.). Default: 23
+- **CXX_STANDARD**: C++ standard version (11, 14, 17, 20, 23, etc.). Default: 23.
+  Module scanning is off regardless of the standard - see
+  [C++ modules](#c-modules).
 - **FOLDER**: IDE folder path for organization (e.g., "MyProject/Core")
 - **PROPERTIES**: Additional CMake target properties as key-value pairs
 - **VERSION**: Semantic version for the library (e.g., "1.2.3")
@@ -856,3 +858,34 @@ cpp_library(
 - These are compile/link settings and apply only to compiled targets. On a header-only
   INTERFACE library they are ignored with the same configure-time warning as the other
   compile-only arguments.
+
+### C++ modules
+
+`cpp_library`, `cpp_binary`, and `cpp_test` set **`CXX_SCAN_FOR_MODULES OFF`** on the compiled
+targets they create. They default `CXX_STANDARD` to 23, so under CMP0155 - which is `NEW` for
+any project declaring `cmake_minimum_required(VERSION 3.28)` or newer - CMake would otherwise
+run a dependency-scanning pass over **every** translation unit to discover `import`/`export
+module` declarations and order module compilation. Targets has no section for declaring a
+module interface unit, so that scan can never find one: it costs a preprocessing pass per
+source file, writes an empty modmap next to each object, and no compile cache can serve it.
+
+The code-generation rules (`flatbuffer_cpp_library`, `protobuf_cpp_library`,
+`grpc_cpp_library`) and `embed_binary` do not set the property; they pin or inherit the
+standard rather than defaulting it to 23.
+
+Three overrides win over the default, in increasing breadth:
+
+```cmake
+# One target that genuinely uses modules. Declare the interface units with the standard
+# target_sources() file set -- Targets has no keyword for them -- and turn scanning back on.
+cpp_library(TARGET Widgets SOURCES "Widgets.cpp")
+target_sources(Widgets PUBLIC FILE_SET CXX_MODULES FILES "Widgets.ixx")
+set_target_properties(Widgets PROPERTIES CXX_SCAN_FOR_MODULES ON)
+```
+
+- **`CMAKE_CXX_SCAN_FOR_MODULES`** - CMake's own variable, which initializes the property on
+  every target created after it is set. Targets leaves the property alone when this variable is
+  defined, so setting it keeps working as CMake documents it.
+- **`-DTARGETS_SCAN_FOR_MODULES=ON`** - the project-wide escape hatch. Targets then leaves the
+  property alone on every target it creates, so CMake's own CMP0155-governed default decides
+  whether to scan.

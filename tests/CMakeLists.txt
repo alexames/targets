@@ -708,3 +708,46 @@ add_test(
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_test_multidir"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_multidir"
 )
+
+# C++20 module-scanning suppression. cpp_target defaults to C++23, which under CMP0155 NEW makes
+# CMake dependency-scan every translation unit for module imports; Targets can declare no module
+# interface unit, so that scan never finds one. The fixture needs CMP0155 to be NEW, so it
+# declares cmake_minimum_required(VERSION 3.28) and these tests are registered only when the
+# CMake running them is that new -- on an older one the inner configure would abort before
+# reaching a single assertion.
+#
+# The default scenario asserts CXX_SCAN_FOR_MODULES reads back OFF on a cpp_library and a
+# cpp_binary and then configures and generates to the end, so the exit code decides. The two
+# override scenarios assert that asking for scanning wins -- project-wide via
+# TARGETS_SCAN_FOR_MODULES (which leaves the property unset for CMP0155 to decide) and via
+# CMake's own CMAKE_CXX_SCAN_FOR_MODULES variable (which sets it). Both halt before generation
+# with the sentinel matched below, because whether CMake can then actually scan depends on the
+# generator.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+  add_test(
+    NAME cpp_target_scan_for_modules_default
+    COMMAND "${CMAKE_COMMAND}"
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_scan_for_modules"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_scan_for_modules_default"
+  )
+
+  add_test(
+    NAME cpp_target_scan_for_modules_opt_in
+    COMMAND "${CMAKE_COMMAND}"
+      -DTARGETS_SCAN_FOR_MODULES=ON
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_scan_for_modules"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_scan_for_modules_opt_in"
+  )
+  set_tests_properties(cpp_target_scan_for_modules_opt_in PROPERTIES
+    PASS_REGULAR_EXPRESSION "SCAN_FOR_MODULES_OVERRIDE_OK")
+
+  add_test(
+    NAME cpp_target_scan_for_modules_cmake_variable
+    COMMAND "${CMAKE_COMMAND}"
+      -DCMAKE_CXX_SCAN_FOR_MODULES=ON
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_scan_for_modules"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_scan_for_modules_cmake_variable"
+  )
+  set_tests_properties(cpp_target_scan_for_modules_cmake_variable PROPERTIES
+    PASS_REGULAR_EXPRESSION "SCAN_FOR_MODULES_OVERRIDE_OK")
+endif()

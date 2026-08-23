@@ -25,6 +25,13 @@ option(TARGETS_MSVC_EDIT_AND_CONTINUE
 option(TARGETS_STAGE_RUNTIME_DLLS
   "Copy dependency runtime DLLs next to each executable after build (Windows)" ON)
 
+# Whether module-import scanning is left to CMake. Targets provides no way to declare a
+# module interface unit, so the per-translation-unit scan that CMP0155 turns on for C++20 and
+# later can never find one, and no compile cache can serve its cost; cpp_target therefore sets
+# CXX_SCAN_FOR_MODULES OFF. Set this to ON to restore CMake's default project-wide.
+option(TARGETS_SCAN_FOR_MODULES
+  "Leave module-import scanning to CMake's default instead of disabling it per target" OFF)
+
 # Include dependency management
 get_filename_component(_TARGETS_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
@@ -614,7 +621,6 @@ function(cpp_target)
       )
     endif()
 
-    # Set C++ standard
     set_target_properties(
       ${args_TARGET}
       PROPERTIES
@@ -622,6 +628,17 @@ function(cpp_target)
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
     )
+
+    # C++20 and later make CMake scan every TU for imports, to order module compilation.
+    # Targets has no way to declare a module interface unit, so the scan cannot find one:
+    # it costs a preprocessing pass per TU, produces an empty modmap, and no compile cache
+    # can serve it. A target that genuinely needs modules re-enables scanning with
+    # set_target_properties(<t> PROPERTIES CXX_SCAN_FOR_MODULES ON). CMake initializes the
+    # property from CMAKE_CXX_SCAN_FOR_MODULES at target creation, so a consumer who sets that
+    # variable keeps their choice.
+    if(NOT TARGETS_SCAN_FOR_MODULES AND NOT DEFINED CMAKE_CXX_SCAN_FOR_MODULES)
+      set_target_properties(${args_TARGET} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+    endif()
 
     # Add compiler definitions
     _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
