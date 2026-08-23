@@ -244,6 +244,79 @@ function(_targets_msvc_cacheable_debug_info TARGET)
   endif()
 endfunction()
 
+# Apply the settings every compiled target this package creates carries, whatever rule created
+# it. TARGET names an existing compiled target -- a static, shared, module or object library,
+# or an executable.
+#
+# Every rule that creates a compiled target calls this; the common_target_defaults_coverage
+# test fails a rule that does not.
+#
+# Call this after the target's own COPTS: the Debug debug-info format it can inject must be the
+# last debug-info flag on the command line to take effect.
+#
+# The module-scanning suppression below matters even to a rule that never asks for C++20: a
+# project-wide CMAKE_CXX_STANDARD of 20 or later reaches every target, and so does a
+# dependency on a header-only cpp_library, whose INTERFACE cxx_std_23 compile feature raises
+# the standard its consumers are compiled at above their own CXX_STANDARD.
+#
+# FATAL_ERROR if TARGET names no target, or names a type with no private compile step (an
+# INTERFACE or a custom target). An ALIAS and an IMPORTED target report the underlying type,
+# so the guard passes them through -- pass a target this package created.
+function(_targets_apply_common_target_defaults TARGET)
+  if(NOT TARGET ${TARGET})
+    message(FATAL_ERROR
+      "_targets_apply_common_target_defaults: '${TARGET}' is not an existing target.")
+  endif()
+  get_target_property(target_type ${TARGET} TYPE)
+  if(NOT target_type MATCHES
+     "^(STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY|EXECUTABLE)$")
+    message(FATAL_ERROR
+      "_targets_apply_common_target_defaults: '${TARGET}' is a ${target_type}, which has no "
+      "private compile step; these settings apply only to compiled targets.")
+  endif()
+
+  # C++20 and later make CMake scan every TU for imports, to order module compilation.
+  # Targets has no way to declare a module interface unit, so the scan cannot find one:
+  # it costs a preprocessing pass per TU, produces an empty modmap, and no compile cache
+  # can serve it. A target that genuinely needs modules re-enables scanning with
+  # set_target_properties(<t> PROPERTIES CXX_SCAN_FOR_MODULES ON). CMake initializes the
+  # property from CMAKE_CXX_SCAN_FOR_MODULES at target creation, so a consumer who sets that
+  # variable keeps their choice.
+  if(NOT TARGETS_SCAN_FOR_MODULES AND NOT DEFINED CMAKE_CXX_SCAN_FOR_MODULES)
+    set_target_properties(${TARGET} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+  endif()
+
+  # MSVC compiler and linker flags. Each flag is scoped to the configurations and
+  # architectures where it is valid; injecting them unconditionally de-optimized
+  # Release and broke ARM64 (see issue #5).
+  if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    # UTF-8 source and execution character sets: safe in every configuration and
+    # on every architecture.
+    target_compile_options(${TARGET} PRIVATE /utf-8)
+
+    # Edit-and-continue debug info (/ZI) is a Debug-only developer convenience. It
+    # de-optimizes Release builds and is only valid on x86/x64, so it is gated to
+    # Debug via a generator expression, skipped on ARM/ARM64, and can be disabled
+    # entirely with -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF. A configured compiler launcher
+    # outranks the option, whose ON cannot be told apart from its default anyway: /ZI is
+    # what keeps a Debug translation unit out of a compile cache.
+    if(CMAKE_CXX_COMPILER_LAUNCHER)
+      _targets_msvc_cacheable_debug_info(${TARGET})
+    elseif(TARGETS_MSVC_EDIT_AND_CONTINUE
+           AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
+      target_compile_options(${TARGET} PRIVATE "$<$<CONFIG:Debug>:/ZI>")
+    endif()
+
+    # /SAFESEH:NO only affects the x86 (32-bit) linker: it is a silent no-op on x64,
+    # invalid on ARM64, and ignored on static libraries (which are archived, not
+    # linked). Restrict it to x86 linked images: executables, shared and module libraries.
+    if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "X86"
+       AND target_type MATCHES "^(EXECUTABLE|SHARED_LIBRARY|MODULE_LIBRARY)$")
+      target_link_options(${TARGET} PRIVATE /SAFESEH:NO)
+    endif()
+  endif()
+endfunction()
+
 # Main cpp_target function
 function(cpp_target)
   # Parse function arguments
@@ -691,17 +764,6 @@ function(cpp_target)
         CXX_EXTENSIONS OFF
     )
 
-    # C++20 and later make CMake scan every TU for imports, to order module compilation.
-    # Targets has no way to declare a module interface unit, so the scan cannot find one:
-    # it costs a preprocessing pass per TU, produces an empty modmap, and no compile cache
-    # can serve it. A target that genuinely needs modules re-enables scanning with
-    # set_target_properties(<t> PROPERTIES CXX_SCAN_FOR_MODULES ON). CMake initializes the
-    # property from CMAKE_CXX_SCAN_FOR_MODULES at target creation, so a consumer who sets that
-    # variable keeps their choice.
-    if(NOT TARGETS_SCAN_FOR_MODULES AND NOT DEFINED CMAKE_CXX_SCAN_FOR_MODULES)
-      set_target_properties(${args_TARGET} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
-    endif()
-
     # Add compiler definitions
     _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
     _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
@@ -738,35 +800,9 @@ function(cpp_target)
       target_link_options(${args_TARGET} PRIVATE ${PRIVATE_LINKOPTS})
     endif()
 
-    # MSVC compiler and linker flags. Each flag is scoped to the configurations and
-    # architectures where it is valid; injecting them unconditionally de-optimized
-    # Release and broke ARM64 (see issue #5).
-    if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-      # UTF-8 source and execution character sets: safe in every configuration and
-      # on every architecture.
-      target_compile_options(${args_TARGET} PRIVATE /utf-8)
-
-      # Edit-and-continue debug info (/ZI) is a Debug-only developer convenience. It
-      # de-optimizes Release builds and is only valid on x86/x64, so it is gated to
-      # Debug via a generator expression, skipped on ARM/ARM64, and can be disabled
-      # entirely with -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF. A configured compiler launcher
-      # outranks the option, whose ON cannot be told apart from its default anyway: /ZI is
-      # what keeps a Debug translation unit out of a compile cache.
-      if(CMAKE_CXX_COMPILER_LAUNCHER)
-        _targets_msvc_cacheable_debug_info(${args_TARGET})
-      elseif(TARGETS_MSVC_EDIT_AND_CONTINUE
-             AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
-        target_compile_options(${args_TARGET} PRIVATE "$<$<CONFIG:Debug>:/ZI>")
-      endif()
-
-      # /SAFESEH:NO only affects the x86 (32-bit) linker: it is a silent no-op on x64,
-      # invalid on ARM64, and ignored on static libraries (which are archived, not
-      # linked). Restrict it to x86 executables and shared libraries.
-      if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "X86"
-         AND (args_TYPE STREQUAL "EXECUTABLE" OR args_SHARED))
-        target_link_options(${args_TARGET} PRIVATE /SAFESEH:NO)
-      endif()
-    endif()
+    # Applied after this target's own COPTS: the Debug debug-info format injected here has to
+    # be the last debug-info flag on the command line.
+    _targets_apply_common_target_defaults(${args_TARGET})
 
     # Add dependencies
     _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})

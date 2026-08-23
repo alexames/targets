@@ -864,8 +864,10 @@ Targets automatically:
 
 ### MSVC Compiler Flags
 
-On MSVC, `cpp_library`/`cpp_binary` inject a small, scoped set of flags into
-non-INTERFACE targets:
+On MSVC, every rule that creates a compiled target - `cpp_library`, `cpp_binary`,
+`cpp_test`, `flatbuffer_cpp_library`, `protobuf_cpp_library`, `grpc_cpp_library`, and
+`embed_binary` - injects a small, scoped set of flags into it. A header-only INTERFACE
+library has no compile step and receives none of them:
 
 - **`/utf-8`** — always applied. Treats source and execution character sets as UTF-8.
 - **`/ZI`** (edit-and-continue debug info) — applied **only to Debug builds** (via a
@@ -962,17 +964,24 @@ cpp_library(
 
 ### C++ modules
 
-`cpp_library`, `cpp_binary`, and `cpp_test` set **`CXX_SCAN_FOR_MODULES OFF`** on the compiled
-targets they create. They default `CXX_STANDARD` to 23, so under CMP0155 - which is `NEW` for
-any project declaring `cmake_minimum_required(VERSION 3.28)` or newer - CMake would otherwise
-run a dependency-scanning pass over **every** translation unit to discover `import`/`export
-module` declarations and order module compilation. Targets has no section for declaring a
-module interface unit, so that scan can never find one: it costs a preprocessing pass per
-source file, writes an empty modmap next to each object, and no compile cache can serve it.
+Every rule that creates a compiled target - `cpp_library`, `cpp_binary`, `cpp_test`,
+`flatbuffer_cpp_library`, `protobuf_cpp_library`, `grpc_cpp_library`, and `embed_binary` -
+sets **`CXX_SCAN_FOR_MODULES OFF`** on it. Under CMP0155 - which is `NEW` for any project
+declaring `cmake_minimum_required(VERSION 3.28)` or newer - CMake would otherwise run a
+dependency-scanning pass over **every** translation unit of a target compiled as C++20 or
+later, to discover `import`/`export module` declarations and order module compilation.
+Targets has no section for declaring a module interface unit, so that scan can never find
+one: it costs a preprocessing pass per source file, writes an empty modmap next to each
+object, and no compile cache can serve it.
 
-The code-generation rules (`flatbuffer_cpp_library`, `protobuf_cpp_library`,
-`grpc_cpp_library`) and `embed_binary` do not set the property; they pin or inherit the
-standard rather than defaulting it to 23.
+`cpp_library`, `cpp_binary`, and `cpp_test` default `CXX_STANDARD` to 23, so their targets are
+in scanning range unless the caller asks for an older standard. The code-generation and embed
+rules pin or inherit the standard instead, which does not keep them out of it: a project-wide
+`CMAKE_CXX_STANDARD` of 20 or later puts them in range, and so does a dependency on a
+header-only `cpp_library`. That library carries `cxx_std_23` as an `INTERFACE` compile
+feature, and CMake compiles a consumer at the highest standard any of its compile features
+requires - above the consumer's own `CXX_STANDARD`, which keeps reading whatever the rule
+set.
 
 Three overrides win over the default, in increasing breadth:
 

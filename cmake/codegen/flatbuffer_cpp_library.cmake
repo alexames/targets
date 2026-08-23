@@ -234,6 +234,8 @@ function(flatbuffer_cpp_library)
   # Create library target
   add_library(${args_TARGET} STATIC)
 
+  _targets_apply_common_target_defaults(${args_TARGET})
+
   # Add sources
   target_sources(${args_TARGET}
     PRIVATE

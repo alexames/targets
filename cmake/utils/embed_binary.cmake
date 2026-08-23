@@ -175,6 +175,8 @@ const std::size_t ${var_name}_size = ${data_length};
     ${generated_headers}
   )
 
+  _targets_apply_common_target_defaults(${args_TARGET})
+
   # Add include directory
   target_include_directories(${args_TARGET}
     PUBLIC
