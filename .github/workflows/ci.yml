@@ -234,6 +234,21 @@ jobs:
       - name: Setup CMake
         uses: lukka/get-cmake@latest
 
+      # compiler_cache_cross_checkout skips where no cache binary is installed, so without
+      # this the cross-checkout claim goes unmeasured on every runner. The version query turns
+      # a shim that installed but cannot run into a failed job rather than a silent skip.
+      - name: Install ccache (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ccache && ccache --version
+
+      - name: Install ccache (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ccache && ccache --version
+
+      - name: Install ccache (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ccache -y --no-progress && ccache --version
+
       # Runs the project's full CTest suite (tests/unit + tests/integration) with
       # TARGETS_BUILD_TESTS=ON. The top-level project is LANGUAGES NONE and the tests are
       # self-contained script-mode (cmake -P) and configure-mode (cmake -S/-B) sub-projects
@@ -247,3 +262,16 @@ jobs:
 
       - name: Run CTest suite
         run: ctest --test-dir build --build-config Release --output-on-failure
+
+      # A skipped test keeps the job green, so compiler_cache_cross_checkout could stop
+      # running on a runner and nothing would say so -- which is the state this test was
+      # written to end. Re-running it alone turns a skip into a failed job.
+      - name: Confirm the cross-checkout cache test ran
+        shell: bash
+        run: |
+          ctest --test-dir build --build-config Release --output-on-failure \
+            -R compiler_cache_cross_checkout 2>&1 | tee cross-checkout.log
+          if grep -qF '***Skipped' cross-checkout.log; then
+            echo "compiler_cache_cross_checkout was skipped; this runner measured nothing."
+            exit 1
+          fi
