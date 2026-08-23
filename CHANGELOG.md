@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `cpp_library`, `cpp_binary`, and `cpp_test` now set `CXX_SCAN_FOR_MODULES OFF` on the
+  compiled targets they create. Because they default to C++23, CMP0155 otherwise made CMake
+  dependency-scan every translation unit for module imports; Targets offers no way to declare a
+  module interface unit, so the scan never found one, and its cost cannot be served from a
+  compile cache. A target that genuinely uses modules re-enables scanning with
+  `set_target_properties(<t> PROPERTIES CXX_SCAN_FOR_MODULES ON)`, a consumer who sets
+  `CMAKE_CXX_SCAN_FOR_MODULES` keeps their choice, and the new `TARGETS_SCAN_FOR_MODULES`
+  option restores CMake's own default project-wide ([Composer#1355]).
+
 ## [0.10.1] - 2026-07-03
 
 ### Fixed
@@ -114,3 +125,4 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#27]: https://github.com/alexames/targets/issues/27
 [#28]: https://github.com/alexames/targets/issues/28
 [#62]: https://github.com/alexames/targets/issues/62
+[Composer#1355]: https://github.com/alexames/Composer/issues/1355
