@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-23
+
 ### Added
 
 - `targets_enable_compiler_cache()`: points `CMAKE_C_COMPILER_LAUNCHER` and
@@ -125,7 +127,8 @@ suite up to full coverage across Linux, macOS, and Windows.
 
 - Stale, private-project-specific artifacts `SUMMARY.md` and `INTEGRATION_GUIDE.md` ([#19]).
 
-[Unreleased]: https://github.com/alexames/targets/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/alexames/targets/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/alexames/targets/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/alexames/targets/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/alexames/targets/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/alexames/targets/releases/tag/v0.9.0
