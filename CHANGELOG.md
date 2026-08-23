@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overrides the rewrite root (default `CMAKE_SOURCE_DIR`), and `REQUIRED` turns a missing
   binary into a configure error ([Composer#1353]).
 
+- CI installs ccache on all three test-suite runners, and the CTest suite gains
+  `compiler_cache_cross_checkout`: a build-mode test that compiles one source from two
+  separate checkouts against a single cache and asserts the second build was served from
+  the entry the first build stored. The rest of the compiler-cache coverage asserts on
+  launcher properties, which every generator accepts whether or not it runs one, so only
+  a real compile distinguishes a working cache from a silently ignored launcher. A
+  missing ccache, Ninja, or MSVC developer environment is reported as a skip
+  ([Composer#1357]).
+
 ### Changed
 
 - `cpp_library`, `cpp_binary`, and `cpp_test` now set `CXX_SCAN_FOR_MODULES OFF` on the
@@ -151,3 +160,4 @@ suite up to full coverage across Linux, macOS, and Windows.
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355
+[Composer#1357]: https://github.com/alexames/Composer/issues/1357

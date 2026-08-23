@@ -925,6 +925,27 @@ if(TARGETS_TEST_NINJA)
     FAIL_REGULAR_EXPRESSION "CMake[ \t\r\n]+Error")
 endif()
 
+# The compiler-cache tests above assert that a launcher was wired; this one compiles, which
+# is the only way to tell a cache that hits from a launcher a generator accepted and dropped.
+#
+# Registered unconditionally: a machine lacking ccache, Ninja, or a developer environment
+# gets a skip, which is visible in the CTest report, where a test omitted at configure time
+# is not. The script's assertions are all FATAL_ERROR, so the exit code decides -- a
+# PASS_REGULAR_EXPRESSION here would make CTest ignore that exit code.
+add_test(
+  NAME compiler_cache_cross_checkout
+  COMMAND "${CMAKE_COMMAND}"
+    "-DTARGETS_CMAKE_DIR=${CMAKE_CURRENT_LIST_DIR}/../cmake"
+    "-DFIXTURE_DIR=${CMAKE_CURRENT_LIST_DIR}/integration/cache_cross_checkout/fixture"
+    "-DSHARED_INCLUDE_SRC=${CMAKE_CURRENT_LIST_DIR}/integration/cache_cross_checkout/shared_include"
+    "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/integration/cache_cross_checkout"
+    -DTEST_GENERATOR=Ninja
+    "-DTEST_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+    -P "${CMAKE_CURRENT_LIST_DIR}/integration/cache_cross_checkout/cross_checkout.cmake"
+)
+set_tests_properties(compiler_cache_cross_checkout PROPERTIES
+  SKIP_REGULAR_EXPRESSION "TARGETS_TEST_SKIP")
+
 # The guard itself, against a real Visual Studio generator rather than a simulated one. The
 # outer generator is reused because it is the Visual Studio known to be installed.
 if(CMAKE_GENERATOR MATCHES "Visual Studio")
