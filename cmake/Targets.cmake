@@ -40,5 +40,6 @@ include("${TARGETS_CMAKE_DIR}/codegen/protobuf_cpp_library.cmake")
 # Include utilities
 include("${TARGETS_CMAKE_DIR}/utils/set_folder_for_targets.cmake")
 include("${TARGETS_CMAKE_DIR}/utils/embed_binary.cmake")
+include("${TARGETS_CMAKE_DIR}/utils/compiler_cache.cmake")
 
 message(STATUS "Targets: Modern CMake build abstraction loaded (version ${TARGETS_VERSION})")

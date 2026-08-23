@@ -665,6 +665,71 @@ embed_binary(
 
 ---
 
+### `targets_enable_compiler_cache()`
+
+Route C and C++ compiles through a compiler cache.
+
+```cmake
+targets_enable_compiler_cache(
+    [PROGRAM <name-or-path>]
+    [BASE_DIR <dir>]
+    [REQUIRED]
+)
+```
+
+Finds a cache binary and points `CMAKE_C_COMPILER_LAUNCHER` and
+`CMAKE_CXX_COMPILER_LAUNCHER` at it. CMake initializes a target's launcher property when the
+target is created, so call this **before** the `cpp_library()`/`cpp_binary()`/`cpp_test()`
+calls it should apply to -- normally from the top-level `CMakeLists.txt`.
+
+**PROGRAM** (default: `ccache`, then `sccache`) names the binary. **BASE_DIR** (default:
+`CMAKE_SOURCE_DIR`) is the directory ccache rewrites absolute paths relative to, and is what
+lets two checkouts of the same sources share cache entries. **REQUIRED** turns a missing
+binary into a `FATAL_ERROR`; without it a missing binary is a `STATUS` message and the build
+proceeds uncached.
+
+The launcher is wrapped in `cmake -E env`:
+
+```
+cmake -E env CCACHE_BASEDIR=<base-dir> CCACHE_NOHASHDIR=1 <program>
+```
+
+Both settings are load-bearing, and putting them in the build rules rather than the
+environment is the point: an exported `CCACHE_BASEDIR` is a single global value, so a second
+worktree silently inherits the first one's and stops hitting. `CCACHE_NOHASHDIR` keeps the
+compilation's working directory out of the hash -- ccache folds it in whenever debug info is
+generated, because it is recorded there, and two checkouts never share one. The trade this
+makes is ccache's own: a debug build served from the cache can carry the directory of the
+compilation that filled it.
+
+On success `TARGETS_COMPILER_CACHE` holds the resolved binary. It is left undefined -- and
+the launchers a previous configure of the same build tree may have left behind are cleared --
+whenever the rule declines to enable caching, so a consumer can test it to find out whether
+caching is really in effect.
+
+Two cases produce a warning rather than silence, because both otherwise look exactly like a
+working cache:
+
+- **A generator that ignores compiler launchers.** Only the Makefile generators and Ninja run
+  one; Visual Studio and Xcode accept the variable and drop it, finishing the build with
+  every cache statistic at zero. The rule names the generator and wires nothing.
+- **sccache.** It does not implement `CCACHE_BASEDIR`, so cross-checkout sharing is not
+  something this rule can deliver with it. The launcher is still wired.
+
+A `BASE_DIR` the sources do not sit under is warned about too: ccache rewrites nothing in
+that case and the cache never hits across checkouts. Letter case matters to ccache's
+comparison and does not to Windows, so a `BASE_DIR` given in the wrong case is re-spelled the
+way the filesystem holds it before it is used.
+
+**Example:**
+
+```cmake
+# Top-level CMakeLists.txt, before any targets are declared.
+targets_enable_compiler_cache()
+```
+
+---
+
 ## Advanced Features
 
 ### Automatic Namespace Aliasing
