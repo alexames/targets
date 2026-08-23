@@ -773,7 +773,9 @@ set_tests_properties(compiler_cache_required_missing PROPERTIES
   FAIL_REGULAR_EXPRESSION "did[ \t\r\n]+not[ \t\r\n]+fail")
 
 # The same missing binary without REQUIRED must configure and generate to the end with the
-# launchers left unset, so the exit code decides.
+# launchers left unset, so the exit code decides -- and it can only decide while no PASS
+# expression is attached, which is why the warning that same run prints is asserted by the
+# separate test below instead of here.
 add_test(
   NAME compiler_cache_optional_missing
   COMMAND "${CMAKE_COMMAND}"
@@ -781,6 +783,21 @@ add_test(
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_optional_missing"
 )
+
+# The PASS expression matches CMake's own "CMake Warning at ... compiler_cache.cmake" banner
+# rather than the message text, because the text alone would match just as well if the rule
+# were demoted to a STATUS message. Spelling out the "at" excludes the "CMake Warning (dev)
+# at" banner an AUTHOR_WARNING would print, which -Wno-dev suppresses entirely.
+add_test(
+  NAME compiler_cache_optional_missing_warns
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=optional_missing
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_optional_missing_warns"
+)
+set_tests_properties(compiler_cache_optional_missing_warns PROPERTIES
+  PASS_REGULAR_EXPRESSION "CMake[ \t]+Warning[ \t]+at[^\n]*compiler_cache[.]cmake"
+  FAIL_REGULAR_EXPRESSION "CMake[ \t\r\n]+Error")
 
 # Declining must clear only what this rule wired in. A launcher the project set for itself
 # has to survive, or enabling the rule would disarm a distcc setup on any machine without
