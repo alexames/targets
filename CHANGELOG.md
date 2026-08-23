@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `set_target_properties(<t> PROPERTIES CXX_SCAN_FOR_MODULES ON)`, a consumer who sets
   `CMAKE_CXX_SCAN_FOR_MODULES` keeps their choice, and the new `TARGETS_SCAN_FOR_MODULES`
   option restores CMake's own default project-wide ([Composer#1355]).
+- On MSVC, Debug targets now get embedded debug info (`/Z7`, through
+  `MSVC_DEBUG_INFORMATION_FORMAT Embedded`) instead of edit-and-continue (`/ZI`) whenever a
+  compiler launcher is configured. ccache refuses any translation unit compiled with `/Zi` or
+  `/ZI` -- the debug info lands in a shared `.pdb` that a cache hit cannot reproduce -- so a
+  Debug build cached nothing at all. The launcher outranks `TARGETS_MSVC_EDIT_AND_CONTINUE`,
+  whose `ON` cannot be told apart from its default; with no launcher configured, `/ZI` is
+  injected exactly as before. Other configurations keep CMake's default debug format, and a
+  project that sets `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT` keeps its own. Where the format
+  comes from `CMAKE_CXX_FLAGS_DEBUG` instead of the property (CMake older than 3.25, or
+  `CMP0141 OLD`), `/Z7` is appended to override it ([Composer#1354]).
 
 ## [0.10.1] - 2026-07-03
 
@@ -139,4 +149,5 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#28]: https://github.com/alexames/targets/issues/28
 [#62]: https://github.com/alexames/targets/issues/62
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
+[Composer#1354]: https://github.com/alexames/Composer/issues/1354
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355

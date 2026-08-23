@@ -90,12 +90,12 @@ function(_targets_apply_toolchain_hygiene)
 
     if("address" IN_LIST h_SANITIZERS)
       # MSVC AddressSanitizer is incompatible with the Debug runtime checks (/RTC1, part of
-      # CMake's default CMAKE_CXX_FLAGS_DEBUG) and with edit-and-continue debug info (/ZI,
-      # which this library itself injects in Debug); cl.exe hard-errors (D8016) on those
-      # combinations. Gate the flag to non-Debug configurations so an opted-in Debug build
-      # is a clean no-op instead of a compile error -- honoring "no-op where unsupported" --
-      # while Release / RelWithDebInfo get real ASan. This also means /fsanitize=address and
-      # the Debug-only /ZI never coexist.
+      # CMake's default CMAKE_CXX_FLAGS_DEBUG); cl.exe hard-errors (D8016) on that
+      # combination. Edit-and-continue debug info (/ZI) is a second such conflict wherever
+      # cpp_target injects it, which is Debug with no compiler launcher configured. Gate the
+      # flag to non-Debug configurations so an opted-in Debug build is a clean no-op instead
+      # of a compile error -- honoring "no-op where unsupported" -- while Release /
+      # RelWithDebInfo get real ASan.
       target_compile_options(${h_TARGET} PRIVATE
         "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<CONFIG:Debug>>>:/fsanitize=address>")
     endif()

@@ -11,7 +11,8 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # /ZI is a developer convenience that only applies to x86/x64 and must never reach
 # Release, where it de-optimizes the build (see issue #5). It is gated to Debug via a
 # generator expression and skipped entirely on ARM/ARM64. Set this to OFF to suppress
-# /ZI in every configuration.
+# /ZI in every configuration. A configured compiler launcher takes the decision out of this
+# option's hands either way: Debug then gets the debug format a compile cache can serve.
 option(TARGETS_MSVC_EDIT_AND_CONTINUE
   "Inject MSVC /ZI (edit-and-continue debug info) into Debug builds on x86/x64" ON)
 
@@ -180,6 +181,67 @@ function(_targets_stage_data TARGET SOURCE_DIR)
         "${dir}" "$<TARGET_FILE_DIR:${TARGET}>/${dir_name}"
       VERBATIM)
   endforeach()
+endfunction()
+
+# Give TARGET a Debug debug-information format that a compile cache can serve.
+#
+# TARGET names an existing compiled target; the caller must have established that the
+# compiler is MSVC.
+#
+# /Zi and /ZI put debug info in a .pdb shared by every translation unit of the target, which
+# a cache hit cannot reproduce: ccache answers unsupported_compiler_option and compiles the
+# unit uncached, so a Debug build hits nothing however the cache is configured. /Z7 carries
+# the same information in the object file, where a cached object brings it along, and,
+# unlike /ZI, carries no x86/x64 restriction.
+#
+# Only Debug is touched. Other configurations keep CMake's default format, so RelWithDebInfo
+# still gets its .pdb -- a Debug-only generator expression on the property would leave every
+# other configuration with no debug information at all. RelWithDebInfo therefore keeps /Zi
+# and keeps missing the cache.
+function(_targets_msvc_cacheable_debug_info TARGET)
+  # CMake turns MSVC_DEBUG_INFORMATION_FORMAT into a flag from 3.25 on, and only under
+  # CMP0141 NEW; otherwise the format is spelled in CMAKE_CXX_FLAGS_DEBUG, out of the
+  # property's reach. A project that puts a debug-info flag there itself is in that same
+  # position whatever the policy says, so both signals have to agree before the property is
+  # trusted. Every way of getting this wrong lands on the flag route, where an appended /Z7
+  # still overrides whatever came earlier.
+  set(format_in_flags TRUE)
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
+    cmake_policy(GET CMP0141 debug_format_policy)
+    if(debug_format_policy STREQUAL "NEW"
+       AND NOT CMAKE_CXX_FLAGS_DEBUG MATCHES "(^| )[/-]Z[iI]( |$)")
+      set(format_in_flags FALSE)
+    endif()
+  endif()
+
+  # A project that names its own format has decided this question already, cacheable or not.
+  if(NOT format_in_flags AND DEFINED CMAKE_MSVC_DEBUG_INFORMATION_FORMAT)
+    return()
+  endif()
+
+  if(format_in_flags)
+    # The last debug-info flag on the command line is the one cl.exe honors, and the one
+    # ccache judges the compile by.
+    target_compile_options(${TARGET} PRIVATE "$<$<CONFIG:Debug>:/Z7>")
+  else()
+    set_target_properties(${TARGET} PROPERTIES MSVC_DEBUG_INFORMATION_FORMAT
+      "$<IF:$<CONFIG:Debug>,Embedded,$<$<CONFIG:RelWithDebInfo>:ProgramDatabase>>")
+  endif()
+
+  get_property(announced GLOBAL PROPERTY _TARGETS_MSVC_DEBUG_FORMAT_ANNOUNCED)
+  if(announced)
+    return()
+  endif()
+  set_property(GLOBAL PROPERTY _TARGETS_MSVC_DEBUG_FORMAT_ANNOUNCED ON)
+  message(STATUS
+    "cpp_target: a compiler launcher is configured, so Debug builds get embedded debug info "
+    "(/Z7) in place of edit-and-continue (/ZI), which no compile cache accepts.")
+  if(format_in_flags)
+    message(STATUS
+      "cpp_target: CMAKE_CXX_FLAGS_DEBUG spells the debug format here, so /Z7 is appended to "
+      "override it and cl.exe reports D9025 once per translation unit. A project requiring "
+      "CMake 3.25 or newer, or setting CMP0141 to NEW, keeps the format out of the flags.")
+  endif()
 endfunction()
 
 # Main cpp_target function
@@ -687,9 +749,13 @@ function(cpp_target)
       # Edit-and-continue debug info (/ZI) is a Debug-only developer convenience. It
       # de-optimizes Release builds and is only valid on x86/x64, so it is gated to
       # Debug via a generator expression, skipped on ARM/ARM64, and can be disabled
-      # entirely with -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF.
-      if(TARGETS_MSVC_EDIT_AND_CONTINUE
-         AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
+      # entirely with -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF. A configured compiler launcher
+      # outranks the option, whose ON cannot be told apart from its default anyway: /ZI is
+      # what keeps a Debug translation unit out of a compile cache.
+      if(CMAKE_CXX_COMPILER_LAUNCHER)
+        _targets_msvc_cacheable_debug_info(${args_TARGET})
+      elseif(TARGETS_MSVC_EDIT_AND_CONTINUE
+             AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
         target_compile_options(${args_TARGET} PRIVATE "$<$<CONFIG:Debug>:/ZI>")
       endif()
 

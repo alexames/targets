@@ -13,6 +13,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(TestCppTargetMsvcFlags LANGUAGES CXX)
 
+# /ZI is injected only where no compiler launcher is configured, and CMake initializes that
+# variable from the environment variable of the same name: a developer with a machine-wide
+# ccache would otherwise trip the assertions below. Debug-format behavior under a launcher
+# has its own test.
+set(CMAKE_CXX_COMPILER_LAUNCHER "")
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../cmake")
 include(Targets)
 

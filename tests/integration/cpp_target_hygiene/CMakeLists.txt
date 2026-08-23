@@ -110,7 +110,7 @@ elseif(SCENARIO STREQUAL "sanitizers")
     message(FATAL_ERROR "sanitizers: expected '${_gnu}' in LINK_OPTIONS: ${_lopts}")
   endif()
   # MSVC: only the address sanitizer, compile-only, and gated to non-Debug configs (Debug's
-  # /RTC1 and this library's /ZI are incompatible with /fsanitize=address).
+  # /RTC1 is incompatible with /fsanitize=address).
   if(NOT "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<CONFIG:Debug>>>:/fsanitize=address>" IN_LIST _copts)
     message(FATAL_ERROR "sanitizers: expected non-Debug-gated MSVC /fsanitize=address in COMPILE_OPTIONS: ${_copts}")
   endif()
