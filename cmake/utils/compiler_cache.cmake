@@ -44,19 +44,19 @@ endfunction()
 #             warned about, because ccache then rewrites nothing and the two checkouts share
 #             nothing.
 #   REQUIRED: Fail configuration with a FATAL_ERROR when no cache binary is found (optional).
-#             Without it a missing binary produces a STATUS message, the launchers are left
-#             unset, and the build proceeds uncached.
+#             Without it a missing binary produces a WARNING, the launchers are left unset,
+#             and the build proceeds uncached.
 #
 # On success the launchers are set as FORCEd cache entries, so every directory processed
 # after this call sees them and a later configure of the same build tree starts with them
 # already in place, and in the calling scope as well. TARGETS_COMPILER_CACHE is set to the
 # resolved binary.
 #
-# Nothing is set under a generator that ignores compiler launchers; a WARNING names the
-# generator and TARGETS_COMPILER_CACHE is left undefined, so a consumer can test it to learn
-# whether caching is really in effect. A call that declines to enable caching, for that
-# reason or because no binary was found, also drops the cache entries an earlier configure of
-# the same build tree got from this rule.
+# Every path that declines to enable caching -- no binary found, or a generator that ignores
+# compiler launchers -- warns, since an uncached build reports success exactly like a cached
+# one. TARGETS_COMPILER_CACHE is left undefined there, so a consumer can test it to learn
+# whether caching is really in effect, and the cache entries an earlier configure of the same
+# build tree got from this rule are dropped.
 #
 # Example:
 #   targets_enable_compiler_cache(REQUIRED)
@@ -99,9 +99,13 @@ function(targets_enable_compiler_cache)
         "targets_enable_compiler_cache: REQUIRED, but no compiler cache was found on PATH "
         "(searched for: ${searched}).")
     endif()
-    message(STATUS
-      "targets_enable_compiler_cache: no compiler cache found (searched for: ${searched}); "
-      "compiler launchers left unset")
+    message(WARNING
+      "targets_enable_compiler_cache: no compiler cache was found on PATH (searched for: "
+      "${searched}), so every compile in this build tree runs uncached while the build still "
+      "reports success. Compiler launchers left unset; install one of those programs, or add "
+      "an existing installation to PATH -- a shell opened before the install still has the "
+      "old PATH -- then configure again. Pass REQUIRED to make this a configure error "
+      "instead.")
     _targets_forget_compiler_cache()
     return()
   endif()

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `targets_enable_compiler_cache()` now reports a missing cache binary with a `WARNING`
+  instead of a `STATUS` message, and the text says how to fix it. The caller asked for a
+  cache and did not get one, the resulting build compiles everything uncached while still
+  reporting success, and a configure is a one-time act whose result persists for the life of
+  the build tree -- so a status line among a hundred others is not enough notice. The most
+  common cause is a shell whose `PATH` predates the ccache install, which no amount of
+  correct configuration on the machine fixes. `REQUIRED` still turns the same case into a
+  `FATAL_ERROR` ([Composer#1367]).
+
 ### Fixed
 
 - `flatbuffer_cpp_library`, `protobuf_cpp_library`, `grpc_cpp_library`, and `embed_binary`
@@ -182,3 +193,4 @@ suite up to full coverage across Linux, macOS, and Windows.
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355
 [Composer#1357]: https://github.com/alexames/Composer/issues/1357
+[Composer#1367]: https://github.com/alexames/Composer/issues/1367

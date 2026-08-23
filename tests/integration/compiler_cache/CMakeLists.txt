@@ -82,8 +82,8 @@ if(SCENARIO STREQUAL "required_missing")
   message(FATAL_ERROR "required_missing: REQUIRED did not fail on a missing cache binary")
 
 elseif(SCENARIO STREQUAL "optional_missing")
-  # Without REQUIRED the same missing binary must leave the build uncached and configure to
-  # the end, so the exit code decides.
+  # Without REQUIRED the same missing binary must warn, leave the build uncached, and
+  # configure to the end.
   targets_enable_compiler_cache(PROGRAM targets_no_such_compiler_cache)
   assert_no_launcher("optional_missing")
 

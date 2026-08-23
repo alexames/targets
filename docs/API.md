@@ -685,8 +685,8 @@ calls it should apply to -- normally from the top-level `CMakeLists.txt`.
 **PROGRAM** (default: `ccache`, then `sccache`) names the binary. **BASE_DIR** (default:
 `CMAKE_SOURCE_DIR`) is the directory ccache rewrites absolute paths relative to, and is what
 lets two checkouts of the same sources share cache entries. **REQUIRED** turns a missing
-binary into a `FATAL_ERROR`; without it a missing binary is a `STATUS` message and the build
-proceeds uncached.
+binary into a `FATAL_ERROR`; without it a missing binary is a `WARNING` and the build proceeds
+uncached.
 
 The launcher is wrapped in `cmake -E env`:
 
@@ -707,9 +707,13 @@ the launchers a previous configure of the same build tree may have left behind a
 whenever the rule declines to enable caching, so a consumer can test it to find out whether
 caching is really in effect.
 
-Two cases produce a warning rather than silence, because both otherwise look exactly like a
+Three cases produce a warning rather than silence, because each otherwise looks exactly like a
 working cache:
 
+- **No cache binary on `PATH`.** The build proceeds uncached and still reports success, and a
+  configure is a one-time act whose result persists for the life of the build tree, so a
+  status line scrolling past is not enough. The warning names what was searched for and says
+  to install it or put it on `PATH`. Pass `REQUIRED` to make it fatal instead.
 - **A generator that ignores compiler launchers.** Only the Makefile generators and Ninja run
   one; Visual Studio and Xcode accept the variable and drop it, finishing the build with
   every cache statistic at zero. The rule names the generator and wires nothing.
