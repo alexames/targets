@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `targets_enable_compiler_cache()`: points `CMAKE_C_COMPILER_LAUNCHER` and
+  `CMAKE_CXX_COMPILER_LAUNCHER` at ccache (or sccache), wrapped in `cmake -E env` so
+  `CCACHE_BASEDIR` and `CCACHE_NOHASHDIR` travel in the build rules instead of the
+  developer's exported environment -- which is what lets two checkouts of the same sources
+  share cache entries with no per-machine setup. It refuses to wire anything under a
+  generator that would ignore the launcher (Visual Studio and Xcode among them; only the
+  Makefile generators and Ninja run one), because a build that caches nothing while
+  reporting success is worse than an uncached build. `PROGRAM` picks the binary, `BASE_DIR`
+  overrides the rewrite root (default `CMAKE_SOURCE_DIR`), and `REQUIRED` turns a missing
+  binary into a configure error ([Composer#1353]).
+
 ### Changed
 
 - `cpp_library`, `cpp_binary`, and `cpp_test` now set `CXX_SCAN_FOR_MODULES OFF` on the
@@ -125,4 +138,5 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#27]: https://github.com/alexames/targets/issues/27
 [#28]: https://github.com/alexames/targets/issues/28
 [#62]: https://github.com/alexames/targets/issues/62
+[Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355

@@ -136,6 +136,11 @@ Every rule and argument is specified in the [API reference](docs/API.md); the hi
   [`flatbuffer_cpp_library`](docs/API.md#flatbuffer_cpp_library) and
   [`protobuf_cpp_library` / `grpc_cpp_library`](docs/API.md#protobuf_cpp_library--grpc_cpp_library)
   wrap schema compilers in linkable library targets.
+- **Compiler caching** —
+  [`targets_enable_compiler_cache`](docs/API.md#targets_enable_compiler_cache) wires ccache
+  into the C and C++ targets declared after it and carries the settings that let separate
+  checkouts share cache entries, refusing to pretend on generators that ignore compiler
+  launchers.
 - **Utilities** — [`set_folder_for_targets`](docs/API.md#set_folder_for_targets) for bulk
   IDE-folder assignment and [`embed_binary`](docs/API.md#embed_binary) for embedding
   files as byte arrays.

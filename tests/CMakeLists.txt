@@ -751,3 +751,192 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
   set_tests_properties(cpp_target_scan_for_modules_cmake_variable PROPERTIES
     PASS_REGULAR_EXPRESSION "SCAN_FOR_MODULES_OVERRIDE_OK")
 endif()
+
+# targets_enable_compiler_cache(). The rule must refuse to claim success where a compiler
+# launcher would be dropped, and must carry the ccache settings that make cross-checkout hits
+# possible in the build rules rather than the ambient environment.
+#
+# The scenarios up to the Ninja search are generator-independent: a missing cache binary is
+# resolved before any generator question is asked, and a misspelled keyword never gets that
+# far. Each pairs its PASS expression with a FAIL expression, because a PASS expression alone
+# makes CTest ignore the exit code -- and a rule that merely warned where it should have
+# failed would still print the wording the PASS expression looks for.
+add_test(
+  NAME compiler_cache_required_missing
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=required_missing
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_required_missing"
+)
+set_tests_properties(compiler_cache_required_missing PROPERTIES
+  PASS_REGULAR_EXPRESSION "REQUIRED,[ \t\r\n]+but[ \t\r\n]+no[ \t\r\n]+compiler[ \t\r\n]+cache"
+  FAIL_REGULAR_EXPRESSION "did[ \t\r\n]+not[ \t\r\n]+fail")
+
+# The same missing binary without REQUIRED must configure and generate to the end with the
+# launchers left unset, so the exit code decides.
+add_test(
+  NAME compiler_cache_optional_missing
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=optional_missing
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_optional_missing"
+)
+
+# Declining must clear only what this rule wired in. A launcher the project set for itself
+# has to survive, or enabling the rule would disarm a distcc setup on any machine without
+# ccache installed.
+add_test(
+  NAME compiler_cache_foreign_launcher_kept
+  COMMAND "${CMAKE_COMMAND}"
+    "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_COMMAND}"
+    -DSCENARIO=foreign_launcher_kept
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_foreign_launcher_kept"
+)
+
+add_test(
+  NAME compiler_cache_unknown_arg
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=unknown_arg
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_unknown_arg"
+)
+set_tests_properties(compiler_cache_unknown_arg PROPERTIES
+  PASS_REGULAR_EXPRESSION "unrecognized[ \t\r\n]+argument"
+  FAIL_REGULAR_EXPRESSION "was[ \t\r\n]+accepted")
+
+# Only the Makefile generators and Ninja run a compiler launcher, so the scenarios that
+# assert one was set have to name such a generator instead of inheriting the default -- on
+# Windows the default is Visual Studio, which the rule deliberately refuses. Visual Studio
+# ships a Ninja that is not on PATH, and CMAKE_GENERATOR_INSTANCE points at the installation
+# whenever the outer build uses a Visual Studio generator; in CI, lukka/get-cmake installs
+# Ninja alongside CMake on all three runners. Without a Ninja none of the scenarios below can
+# be expressed, and none are registered.
+find_program(TARGETS_TEST_NINJA
+  NAMES ninja ninja-build
+  HINTS "${CMAKE_GENERATOR_INSTANCE}/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+  DOC "Ninja used by the compiler-cache tests to get a launcher-running generator")
+if(TARGETS_TEST_NINJA)
+  add_test(
+    NAME compiler_cache_launcher_set
+    COMMAND "${CMAKE_COMMAND}"
+      -G Ninja
+      "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+      -DSCENARIO=launcher_set
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_launcher_set"
+  )
+
+  add_test(
+    NAME compiler_cache_base_dir
+    COMMAND "${CMAKE_COMMAND}"
+      -G Ninja
+      "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+      -DSCENARIO=base_dir
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_base_dir"
+  )
+
+  # A launcher wired into a build tree outlives the configure that wired it, so a later
+  # configure of the same tree that finds no cache binary must drop it rather than leave the
+  # build pointing at a program that may no longer exist. These two share one build tree and
+  # are ordered by the fixture: the first wires a launcher in, the second asks for a program
+  # that does not exist and asserts nothing survived.
+  add_test(
+    NAME compiler_cache_stale_seed
+    COMMAND "${CMAKE_COMMAND}"
+      -G Ninja
+      "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+      -DSCENARIO=launcher_set
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_stale"
+  )
+  set_tests_properties(compiler_cache_stale_seed PROPERTIES
+    FIXTURES_SETUP compiler_cache_stale)
+
+  add_test(
+    NAME compiler_cache_stale_cleared
+    COMMAND "${CMAKE_COMMAND}"
+      -G Ninja
+      "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+      -DSCENARIO=optional_missing
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_stale"
+  )
+  set_tests_properties(compiler_cache_stale_cleared PROPERTIES
+    FIXTURES_REQUIRED compiler_cache_stale)
+
+  # Registered only where case-insensitive paths make a BASE_DIR case mismatch possible; the
+  # exit code decides.
+  if(WIN32)
+    add_test(
+      NAME compiler_cache_base_dir_case_normalized
+      COMMAND "${CMAKE_COMMAND}"
+        -G Ninja
+        "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+        -DSCENARIO=base_dir_case_normalized
+        -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+        -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_base_dir_case_normalized"
+    )
+  endif()
+
+  # The two ways a cache can be wired in and still never hit, which the rule warns about
+  # rather than leaving silent: a BASE_DIR the sources are not under, and sccache, which
+  # ignores CCACHE_BASEDIR altogether. Both keep the launcher -- the cost is hits, not
+  # correctness -- so the PASS expression proves the warning fired and the FAIL expression
+  # keeps a tripped assertion from hiding behind it.
+  add_test(
+    NAME compiler_cache_base_dir_outside
+    COMMAND "${CMAKE_COMMAND}"
+      -G Ninja
+      "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+      -DSCENARIO=base_dir_outside
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_base_dir_outside"
+  )
+  set_tests_properties(compiler_cache_base_dir_outside PROPERTIES
+    PASS_REGULAR_EXPRESSION "is[ \t\r\n]+not[ \t\r\n]+a[ \t\r\n]+prefix[ \t\r\n]+of[ \t\r\n]+the[ \t\r\n]+source"
+    FAIL_REGULAR_EXPRESSION "CMake[ \t\r\n]+Error")
+
+  add_test(
+    NAME compiler_cache_base_dir_sibling_prefix
+    COMMAND "${CMAKE_COMMAND}"
+      -G Ninja
+      "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+      -DSCENARIO=base_dir_sibling_prefix
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_base_dir_sibling_prefix"
+  )
+  set_tests_properties(compiler_cache_base_dir_sibling_prefix PROPERTIES
+    PASS_REGULAR_EXPRESSION "is[ \t\r\n]+not[ \t\r\n]+a[ \t\r\n]+prefix[ \t\r\n]+of[ \t\r\n]+the[ \t\r\n]+source"
+    FAIL_REGULAR_EXPRESSION "CMake[ \t\r\n]+Error")
+
+  add_test(
+    NAME compiler_cache_sccache_warning
+    COMMAND "${CMAKE_COMMAND}"
+      -G Ninja
+      "-DCMAKE_MAKE_PROGRAM=${TARGETS_TEST_NINJA}"
+      -DSCENARIO=sccache_warning
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_sccache_warning"
+  )
+  set_tests_properties(compiler_cache_sccache_warning PROPERTIES
+    PASS_REGULAR_EXPRESSION "does[ \t\r\n]+not[ \t\r\n]+implement[ \t\r\n]+CCACHE_BASEDIR"
+    FAIL_REGULAR_EXPRESSION "CMake[ \t\r\n]+Error")
+endif()
+
+# The guard itself, against a real Visual Studio generator rather than a simulated one. The
+# outer generator is reused because it is the Visual Studio known to be installed.
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+  add_test(
+    NAME compiler_cache_generator_guard
+    COMMAND "${CMAKE_COMMAND}"
+      -G "${CMAKE_GENERATOR}"
+      -DSCENARIO=generator_guard
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/compiler_cache"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/compiler_cache_generator_guard"
+  )
+  set_tests_properties(compiler_cache_generator_guard PROPERTIES
+    PASS_REGULAR_EXPRESSION "ignores[ \t\r\n]+compiler[ \t\r\n]+launchers"
+    FAIL_REGULAR_EXPRESSION "CMake[ \t\r\n]+Error")
+endif()
