@@ -8,36 +8,31 @@ if(TARGETS_INCLUDED)
 endif()
 set(TARGETS_INCLUDED TRUE)
 
-# Minimum CMake version check
+# Every feature these modules use above this floor is version-guarded and degrades, so this
+# is the whole compatibility statement. A CI job configures at exactly this version to keep
+# that true.
 if(CMAKE_VERSION VERSION_LESS "3.20")
     message(FATAL_ERROR "Targets requires CMake 3.20 or later")
 endif()
 
-# Get the directory where this file is located
 get_filename_component(TARGETS_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 
-# Add to module path
 list(APPEND CMAKE_MODULE_PATH "${TARGETS_CMAKE_DIR}")
 
-# Version (single source of truth, shared with the root CMakeLists project() call)
 include("${TARGETS_CMAKE_DIR}/TargetsVersion.cmake")
 
-# Include core modules
 include("${TARGETS_CMAKE_DIR}/core/install_export.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_target.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_library.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_binary.cmake")
 include("${TARGETS_CMAKE_DIR}/core/cpp_test.cmake")
 
-# Include dependency management
 include("${TARGETS_CMAKE_DIR}/dependencies/import_dependencies.cmake")
 include("${TARGETS_CMAKE_DIR}/dependencies/find_targets.cmake")
 
-# Include code generation
 include("${TARGETS_CMAKE_DIR}/codegen/flatbuffer_cpp_library.cmake")
 include("${TARGETS_CMAKE_DIR}/codegen/protobuf_cpp_library.cmake")
 
-# Include utilities
 include("${TARGETS_CMAKE_DIR}/utils/set_folder_for_targets.cmake")
 include("${TARGETS_CMAKE_DIR}/utils/embed_binary.cmake")
 include("${TARGETS_CMAKE_DIR}/utils/compiler_cache.cmake")

@@ -82,10 +82,10 @@ jobs:
             exit 1
           }
 
-      # Runs the SHARED-library example (issue #21). On Windows this only launches if
-      # Greeter.dll was staged next to GreeterApp.exe (proving DLL staging) and the exe linked
-      # against a populated import library (proving EXPORT_HEADER exports symbols). On
-      # Ubuntu/macOS it links the shared object, found via the build-tree RPATH.
+      # Runs the SHARED-library example. On Windows this only launches if Greeter.dll was
+      # staged next to GreeterApp.exe (proving DLL staging) and the exe linked against a
+      # populated import library (proving EXPORT_HEADER exports symbols). On Ubuntu/macOS it
+      # links the shared object, found via the build-tree RPATH.
       - name: Test shared_library example (Ubuntu/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -106,9 +106,9 @@ jobs:
             exit 1
           }
 
-      # Runs the DATA-staging example (issue #27). DataApp opens a data file by relative name,
-      # so it only succeeds if the DATA attribute copied message.txt into the executable's own
-      # directory; the exe is run FROM that directory to prove the file landed next to it.
+      # Runs the DATA-staging example. DataApp opens a data file by relative name, so it only
+      # succeeds if the DATA attribute copied message.txt into the executable's own directory;
+      # the exe is run FROM that directory to prove the file landed next to it.
       - name: Test data_files example (Ubuntu/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -142,6 +142,59 @@ jobs:
             build-debug/**/*.log
             build-debug/CMakeFiles/**/*.log
 
+  cmake-floor:
+    name: Configure and build at the declared CMake floor
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # Every other job installs the newest CMake, so the floor declared in
+      # cmake/Targets.cmake, the README and docs/API.md would otherwise be a claim nothing
+      # checks. The version is pinned to an exact release archive rather than resolved by an
+      # action, so this job cannot quietly start testing a different version than it names.
+      - name: Install CMake at the declared floor
+        run: |
+          curl -fsSL -o cmake-floor.tar.gz \
+            https://github.com/Kitware/CMake/releases/download/v3.20.6/cmake-3.20.6-linux-x86_64.tar.gz
+          mkdir -p "$HOME/cmake-floor"
+          tar -xzf cmake-floor.tar.gz -C "$HOME/cmake-floor" --strip-components=1
+          echo "$HOME/cmake-floor/bin" >> "$GITHUB_PATH"
+
+      - name: Confirm the pinned CMake is the one on PATH
+        shell: bash
+        run: |
+          version="$(cmake --version | head -n 1)"
+          echo "$version"
+          case "$version" in
+            "cmake version 3.20."*) ;;
+            *) echo "expected CMake 3.20.x, got: $version"; exit 1 ;;
+          esac
+
+      # The examples cover cpp_library and cpp_binary, the install/export and SHARED paths,
+      # DATA staging, embed_binary, and the hygiene knobs. They do not call cpp_test, and the
+      # codegen rules find no FlatBuffers or Protocol Buffers on a bare runner, so for those
+      # three this proves only that including them at the floor is clean -- their own version
+      # guards run in the test-suite job instead. Whatever the examples do reach that needs
+      # more than the floor fails the configure here; a guard that degrades to a diagnostic is
+      # caught by the warning check. The toolchain_hygiene example uses the deprecated
+      # file-list spelling on purpose, so its CMake Deprecation Warning is expected and only a
+      # plain CMake Warning fails the job.
+      - name: Configure examples at the floor
+        shell: bash
+        run: |
+          cmake -B build-floor -S . \
+            -DTARGETS_BUILD_EXAMPLES=ON -DTARGETS_BUILD_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure-floor.log
+          if grep -q '^CMake Warning' configure-floor.log; then
+            echo "Configuring at the CMake floor produced a warning; see the log above."
+            exit 1
+          fi
+
+      - name: Build examples at the floor
+        run: cmake --build build-floor
+
   consume-port:
     name: Consume in-repo vcpkg port on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -171,7 +224,7 @@ jobs:
 
       # Installs the in-repo ports/targets overlay port end-to-end and configures a real
       # consumer that calls find_package(Targets CONFIG REQUIRED). This fails if the port
-      # ever regresses to installing a layout that find_package cannot resolve (issue #2).
+      # ever regresses to installing a layout that find_package cannot resolve.
       - name: Configure consumer against the overlay port
         env:
           # See the Build Examples job: disable the broken x-gha binary cache so vcpkg installs
@@ -205,7 +258,7 @@ jobs:
       - name: Setup CMake
         uses: lukka/get-cmake@latest
 
-      # End-to-end proof of the install/export feature (issue #20). The producer is the
+      # End-to-end proof of the install/export feature. The producer is the
       # examples/install_export project: a cpp_library marked INSTALL EXPORT. It has no
       # external dependencies, so no vcpkg toolchain is needed -- the OS's default compiler
       # (gcc/clang/MSVC) suffices. Build it and install it to a staging prefix.

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `cmake-floor` CI job configures and builds the examples with the exact CMake version the
+  project declares as its minimum. Every other job installs the newest release, so nothing
+  tested the floor; whatever the examples reach that needs more than it now fails a job
+  ([#83]).
 - `SOURCES` now accepts `PUBLIC` and `PRIVATE` groups, the grammar every other list argument
   already uses. `PUBLIC` entries are the target's interface and resolve against `HEADER_DIR`;
   `PRIVATE` entries are its implementation and resolve against `SOURCE_DIR`; platform
@@ -23,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The comments and docstrings across the shipped CMake modules were audited against the
+  project's comment standard. Every reference to a closed issue is gone, with the reason it
+  pointed at written into the comment where the comment did not already carry it; the public
+  rules now document their defaults, what they store, and every condition that fails a
+  configure. `README.md` presents what the rules buy a reader rather than an inventory of
+  what ships, and `docs/API.md` presents the current `SOURCES` grammar as the grammar rather
+  than teaching a migration to it ([#83]).
 - Targets no longer creates `INTERFACE` libraries. A library with public files and no private
   translation unit is given the shipped `dummy.cpp` placeholder and built as `STATIC` (or
   `SHARED` when asked), exactly as a library with no files at all already was. This keeps
@@ -316,6 +327,7 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#70]: https://github.com/alexames/targets/issues/70
 [#79]: https://github.com/alexames/targets/issues/79
 [#82]: https://github.com/alexames/targets/issues/82
+[#83]: https://github.com/alexames/targets/issues/83
 [#84]: https://github.com/alexames/targets/issues/84
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354

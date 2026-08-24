@@ -33,7 +33,8 @@ targets/
 │   │   └── protobuf_cpp_library.cmake  # protobuf_cpp_library + grpc_cpp_library
 │   └── utils/
 │       ├── set_folder_for_targets.cmake
-│       └── embed_binary.cmake
+│       ├── embed_binary.cmake
+│       └── compiler_cache.cmake     # targets_enable_compiler_cache (ccache/sccache)
 ├── examples/                      # buildable usage examples
 ├── tests/                         # CTest suite (script-mode + configure-mode)
 ├── ports/targets/                 # vcpkg overlay port
@@ -84,7 +85,7 @@ cmake -P tests/unit/test_parse_platforms.cmake
   `PASS_REGULAR_EXPRESSION` — is the cheapest reliable harness.
 
 Continuous integration ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs four
-jobs, each on ubuntu-latest, windows-latest, and macos-latest:
+jobs on ubuntu-latest, windows-latest, and macos-latest:
 
 - **build-examples** — builds every example and runs the executable, shared-library, and
   data-file ones.
@@ -94,6 +95,14 @@ jobs, each on ubuntu-latest, windows-latest, and macos-latest:
   separate project via `find_package(WidgetKit CONFIG REQUIRED)`.
 - **consume-port** — installs the in-repo vcpkg port and consumes it via
   `find_package(Targets CONFIG REQUIRED)`.
+
+plus one that runs on ubuntu-latest only:
+
+- **cmake-floor** — configures and builds the examples with the exact CMake version the
+  project declares as its minimum, since every other job installs the newest release.
+  Whatever the examples reach that needs more than the floor fails here. They do not call
+  `cpp_test` and find no schema compilers, so those rules' own version guards are covered by
+  **test-suite** rather than by this job.
 
 Local testing usually covers only one OS, so rely on CI for cross-platform coverage and
 report your local results honestly in the PR.

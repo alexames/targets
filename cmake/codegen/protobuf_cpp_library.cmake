@@ -1,14 +1,13 @@
-# protobuf_cpp_library.cmake
-# Generate C++ sources from Protocol Buffers (.proto) files -- optionally with gRPC
-# service stubs -- and wrap them in a linkable library.
+# protobuf_cpp_library() and grpc_cpp_library(): generate C++ sources from Protocol Buffers
+# (.proto) files -- optionally with gRPC service stubs -- and wrap them in a linkable library.
 
 include_guard(GLOBAL)
 
 get_filename_component(_TARGETS_CODEGEN_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_CODEGEN_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/dependencies/import_dependencies.cmake")
-# For the shared _targets_check_args() argument validator and the
-# _targets_partition_files_by_root() source_group helper (see issue #6).
+# For _targets_check_args(), _targets_partition_files_by_root() and
+# _targets_apply_common_target_defaults().
 include("${_TARGETS_ROOT_DIR}/core/cpp_target.cmake")
 
 # Records the proto import root(s) a target exposes so a dependent protobuf_cpp_library can
@@ -34,8 +33,17 @@ define_property(TARGET PROPERTY PROTOBUF_IMPORT_DIRS
 #   IMPORT_DIRS: Additional directories added to protoc's -I search path.
 #   NAMESPACE_ROOT: Root for the namespace alias / IDE folder. Default:
 #                   PROJECT_SOURCE_DIR/Source (matches cpp_target()).
-#   DEPENDENCIES: Other proto library targets this one links and imports from.
-#   FLAGS: Additional flags passed through to protoc.
+#   DEPENDENCIES: Other proto library targets this one links and imports from. Linked PUBLIC.
+#   FLAGS: Additional flags passed through to protoc (added to the ones this rule builds).
+#
+# The generated library pins CXX_STANDARD 17 as a floor: protobuf-generated code needs it, and
+# a dependency's INTERFACE cxx_std_* compile feature can still raise the standard above it.
+#
+# FATAL_ERROR when TARGET or PROTOS is missing, an argument is unrecognized, a named proto does
+# not exist or lies outside PROTO_ROOT_DIR, protoc cannot be located, a DEPENDENCIES label
+# rooted at this project names a subdirectory that does not declare it (see
+# import_dependencies), or -- for grpc_cpp_library() -- the gRPC C++ plugin cannot be
+# located.
 #
 # Example:
 #   protobuf_cpp_library(
@@ -92,13 +100,11 @@ function(_targets_protobuf_cpp_library enable_grpc)
     set(rule "protobuf_cpp_library")
   endif()
 
-  # Reject typo'd or misplaced arguments instead of silently ignoring them (see issue #4).
   _targets_check_args("${rule}"
     "${args_UNPARSED_ARGUMENTS}"
     "${args_KEYWORDS_MISSING_VALUES}"
     ${options} ${one_value_args} ${multi_value_args})
 
-  # Validate required arguments.
   if(NOT args_TARGET)
     message(FATAL_ERROR "${rule}: TARGET must be provided")
   endif()
@@ -106,7 +112,6 @@ function(_targets_protobuf_cpp_library enable_grpc)
     message(FATAL_ERROR "${rule}: PROTOS must be provided")
   endif()
 
-  # Set defaults.
   if(NOT args_PROTO_ROOT_DIR)
     set(args_PROTO_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}")
   elseif(NOT IS_ABSOLUTE "${args_PROTO_ROOT_DIR}")
@@ -130,7 +135,7 @@ function(_targets_protobuf_cpp_library enable_grpc)
   # Locate protoc. Prefer the imported target from find_package(Protobuf) so the generator
   # correctly serializes a DEPENDS on the tool; fall back to the executable variable. protoc
   # is resolved at the point of use (not module-include time) so include(Targets) stays
-  # side-effect free for projects that never call this rule (compare issue #3).
+  # side-effect free for a project that never calls this rule.
   if(TARGET protobuf::protoc)
     set(protoc_dependency protobuf::protoc)
     set(protoc "$<TARGET_FILE:protobuf::protoc>")
@@ -194,7 +199,6 @@ function(_targets_protobuf_cpp_library enable_grpc)
   set(generated_source_dir "${CMAKE_CURRENT_BINARY_DIR}/_protobuf_cpp_library/${args_TARGET}")
   file(MAKE_DIRECTORY "${generated_source_dir}")
 
-  # Generate C++ for each proto.
   unset(all_generated_sources)
   unset(all_generated_headers)
   foreach(proto IN LISTS proto_paths)
@@ -259,7 +263,7 @@ function(_targets_protobuf_cpp_library enable_grpc)
   # placeholder is required.
   add_library(${args_TARGET} STATIC)
 
-  # The CXX_STANDARD 17 this rule pins is a floor, not a ceiling: a dependency's INTERFACE
+  # The CXX_STANDARD 17 pinned below is a floor, not a ceiling: a dependency's INTERFACE
   # cxx_std_* compile feature raises the standard this target is compiled at above it, while
   # the property keeps reading 17.
   _targets_apply_common_target_defaults(${args_TARGET})
@@ -315,7 +319,7 @@ function(_targets_protobuf_cpp_library enable_grpc)
   # Namespace alias + IDE folder, derived from the *enclosing* project (PROJECT_NAME) and the
   # target's path relative to NAMESPACE_ROOT. This mirrors cpp_target() and
   # flatbuffer_cpp_library(); keying off the enclosing project keeps an embedded proto
-  # library's alias stable (see issue #8).
+  # library's alias stable.
   if(EXISTS "${args_NAMESPACE_ROOT}")
     file(RELATIVE_PATH relative_path_from_root "${args_NAMESPACE_ROOT}" "${CMAKE_CURRENT_LIST_DIR}")
   else()
@@ -338,8 +342,7 @@ function(_targets_protobuf_cpp_library enable_grpc)
 
   # IDE source groups. source_group(TREE ...) hard-errors on any file outside its root, so
   # generated sources (build tree) and proto sources (source tree) are each partitioned and
-  # only the in-root files get a TREE grouping; out-of-root files fall back to a flat group
-  # (see issue #6).
+  # only the in-root files get a TREE grouping; out-of-root files fall back to a flat group.
   _targets_partition_files_by_root(
     "${generated_source_dir}" in_tree_generated out_of_tree_generated
     ${all_generated_sources} ${all_generated_headers})

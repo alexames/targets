@@ -1,5 +1,23 @@
 # Targets API Reference
 
+## Requirements
+
+Targets requires **CMake 3.20 or later**, and says so with a hard check when the modules are
+included. Every feature the rules use above that floor is version-guarded and degrades:
+
+| Feature | Needs | Below it |
+|---|---|---|
+| `$<TARGET_RUNTIME_DLLS>` DLL staging | 3.21 | staging is skipped |
+| `GLOBAL` promotion of an imported Google Test | 3.24 | each imported target is promoted with `IMPORTED_GLOBAL` |
+| `MSVC_DEBUG_INFORMATION_FORMAT` under `CMP0141 NEW` | 3.25 | `/Z7` is appended to the target's options instead |
+| `EXCLUDE_FROM_ALL` on a fetched Google Test | 3.28 | the fetched targets are part of `ALL` |
+
+The `Visual Studio 17 2022` generator needs **CMake 3.21**, which is CMake's own limit rather
+than this project's: 3.20 knows only up to `Visual Studio 16 2019`. Ninja and the Makefile
+generators drive a VS 2022 toolchain from 3.20, and are the only generators that run a
+compiler launcher, so they are what
+[`targets_enable_compiler_cache()`](#targets_enable_compiler_cache) requires anyway.
+
 ## Core Functions
 
 ### `cpp_library()`
@@ -133,6 +151,7 @@ cpp_library(
             src/calculator.cpp
             src/geometry.cpp
             src/detail/lookup_tables.h
+    HEADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
     INCLUDES
         PUBLIC
             include/
@@ -884,48 +903,23 @@ cpp_library(
 - Platform sentinels nest *inside* a visibility group, exactly as they do for
   `DEPENDENCIES`. See [Platform-conditional entries](#platform-conditional-entries).
 
-#### Migrating from SOURCES / HEADERS
+#### Deprecated spellings
 
-On a library, the older spelling — a bare `SOURCES` list plus a separate `HEADERS` list —
-still works and is deprecated. It was already this same split under different names:
-`HEADERS` resolved against `HEADER_DIR` and `SOURCES` against `SOURCE_DIR`. So the migration
-is mechanical, and for a project whose libraries all have at least one source file nothing
-changes about any target:
+A library's `SOURCES` also accepts a bare list — no `PUBLIC`/`PRIVATE` keywords, every entry
+private — and `HEADERS` is a deprecated second name for `SOURCES PUBLIC`, accepted on every
+rule. Both are deprecated and reported through CMake's own deprecation machinery, so
+`-Wno-deprecated` silences them and `-Werror=deprecated` makes them a configure error. Only
+the first such call of a configure is reported; `-DTARGETS_WARN_ALL_LEGACY_SOURCES=ON` names
+every one of them.
 
-```cmake
-# Before                             # After
-SOURCES                              SOURCES
-    Widget.cpp                           PUBLIC
-    detail/LayoutCache.hpp                   widgets/Widget.hpp
-HEADERS                                  PRIVATE
-    widgets/Widget.hpp                       Widget.cpp
-                                             detail/LayoutCache.hpp
-```
+A library's `SOURCES` is one spelling or the other, decided by its first entry: opening with
+`PUBLIC` or `PRIVATE` selects the grouped form and anything else selects the bare list.
+Mixing them — opening bare and naming an access keyword later, or passing grouped `SOURCES`
+and `HEADERS` in the same call — is a configure-time error, because the entries ahead of the
+keyword have no reading that keeps them and the two lists describe the same public files.
 
-Existing `SOURCES` entries become `PRIVATE`, existing `HEADERS` entries become `PUBLIC`.
-
-Two rules keep a half-finished migration from configuring into something you did not mean:
-
-- **A library's `SOURCES` list is one spelling or the other, decided by its first entry.**
-  Opening with `PUBLIC` or `PRIVATE` selects the grouped form; anything else is the bare
-  list. Opening bare and naming an access keyword later is a configure-time error, because
-  the entries ahead of the keyword have no reading — under the bare one the keyword becomes
-  a file name, and under the grouped one they are exactly what the access-specifier check
-  rejects.
-- **Grouped `SOURCES` and `HEADERS` in one library call is a configure-time error.** They
-  are two spellings of the same public file list; move the `HEADERS` entries under
-  `SOURCES PUBLIC`. A leaf target's `SOURCES` has no public group, so the two do not
-  collide there.
-
-A bare `SOURCES` list on `cpp_binary` or `cpp_test` is not this deprecated spelling: it is
-the ordinary one, and reports nothing. Only `HEADERS` is deprecated on a leaf target.
-
-The deprecated spelling reports itself with CMake's own deprecation machinery, so
-`-Wno-deprecated` silences it and `-Werror=deprecated` turns it into a configure error. Only
-the **first** such call of a configure is reported, because a project with hundreds of
-targets would otherwise bury every other message; pass
-`-DTARGETS_WARN_ALL_LEGACY_SOURCES=ON` to have every remaining call name its
-`CMakeLists.txt` line, which is what you want while doing the migration.
+A bare `SOURCES` list on `cpp_binary` or `cpp_test` is not the deprecated spelling: it is the
+ordinary one, and reports nothing. Only `HEADERS` is deprecated on a leaf target.
 
 ### Platform-conditional entries
 

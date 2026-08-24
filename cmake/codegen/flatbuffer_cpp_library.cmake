@@ -1,32 +1,48 @@
-# flatbuffer_cpp_library.cmake
-# Generate C++ headers from FlatBuffers schema files
+# flatbuffer_cpp_library(): compile .fbs schemas into a linkable C++ library.
 
 include_guard(GLOBAL)
 
 get_filename_component(_TARGETS_CODEGEN_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_CODEGEN_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/dependencies/import_dependencies.cmake")
-# For the shared _targets_check_args() argument validator.
+# For _targets_check_args(), _targets_dummy_source(), _targets_partition_files_by_root() and
+# _targets_apply_common_target_defaults().
 include("${_TARGETS_ROOT_DIR}/core/cpp_target.cmake")
 
-# Define custom target property for schema directories
 define_property(TARGET PROPERTY FLATBUFFERS_SCHEMA_DIR
   BRIEF_DOCS "Directory containing FlatBuffers schema files"
   FULL_DOCS "The root directory containing .fbs schema files for this target"
 )
 
-# Generate C++ headers from FlatBuffers schemas
+# Generate a C++ library from FlatBuffers schemas.
 #
-# Creates a target that can be linked against that generates flatbuffer headers.
+# Runs flatc over each .fbs to produce a <name>_generated.h and builds a STATIC library from
+# them, with the generated-header directory on the library's PUBLIC include path: a consumer
+# names the target under DEPENDENCIES and includes the headers, with nothing else to wire.
 #
 # Arguments:
-#   TARGET: The name of the target to generate (required)
-#   SCHEMAS: The list of schema files to generate code for (required)
-#   SCHEMA_ROOT_DIR: Root directory for schema includes (default: PROJECT_SOURCE_DIR/Source)
-#   INCLUDE_PREFIX: Prefix path for generated headers
-#   BINARY_SCHEMAS_DIR: Directory for binary schema output (.bfbs files)
-#   DEPENDENCIES: Dependencies on other FlatBuffer schema targets
-#   FLAGS: Additional flags to pass to flatc compiler
+#   TARGET: Name of the library target to create (required).
+#   SCHEMAS: The .fbs files to compile (required). A relative entry resolves against the
+#            calling CMakeLists directory; each must exist at configure time.
+#   SCHEMA_ROOT_DIR: Root the generated output layout mirrors, and flatc's working directory
+#                    (default: PROJECT_SOURCE_DIR/Source). Also published to dependents as
+#                    this target's FLATBUFFERS_SCHEMA_DIR.
+#   INCLUDE_PREFIX: Path prepended to the generated headers' location, and passed to flatc as
+#                   --include-prefix so cross-schema includes agree with it (default: none).
+#   BINARY_SCHEMAS_DIR: Where the .bfbs binary schemas are written (default:
+#                       PROJECT_BINARY_DIR/flatbuffers). Binary schemas are always generated.
+#   DEPENDENCIES: Other flatbuffer_cpp_library targets. Linked PUBLIC, and their schema
+#                 directories are added to flatc's -I path so cross-target includes resolve.
+#   FLAGS: Flags passed to flatc, REPLACING the defaults below rather than adding to them.
+#   VERBOSE: Accepted and unused.
+#
+# The paths given here are resolved once and baked into the generated build rules, so a file
+# moved afterward is not picked up until the next configure.
+#
+# FATAL_ERROR when TARGET or SCHEMAS is missing, an argument is unrecognized, a named schema
+# does not exist, flatc cannot be located, a DEPENDENCIES label rooted at this project names a
+# subdirectory that does not declare it (see import_dependencies), or the placeholder
+# translation unit is missing from the Targets package.
 #
 # Example:
 #   flatbuffer_cpp_library(
@@ -41,7 +57,6 @@ define_property(TARGET PROPERTY FLATBUFFERS_SCHEMA_DIR
 #       FLAGS --gen-mutable
 #   )
 function(flatbuffer_cpp_library)
-  # Parse function arguments
   set(options VERBOSE)
   set(one_value_args
     TARGET
@@ -62,13 +77,11 @@ function(flatbuffer_cpp_library)
     "${one_value_args}"
     "${multi_value_args}")
 
-  # Reject typo'd or misplaced arguments instead of silently ignoring them.
   _targets_check_args("flatbuffer_cpp_library"
     "${args_UNPARSED_ARGUMENTS}"
     "${args_KEYWORDS_MISSING_VALUES}"
     ${options} ${one_value_args} ${multi_value_args})
 
-  # Validate required arguments
   if(NOT args_TARGET)
     message(FATAL_ERROR "flatbuffer_cpp_library: TARGET must be provided")
   endif()
@@ -77,7 +90,6 @@ function(flatbuffer_cpp_library)
     message(FATAL_ERROR "flatbuffer_cpp_library: SCHEMAS must be provided")
   endif()
 
-  # Set defaults
   if(NOT args_SCHEMA_ROOT_DIR)
     set(args_SCHEMA_ROOT_DIR "${PROJECT_SOURCE_DIR}/Source")
   endif()
@@ -86,7 +98,6 @@ function(flatbuffer_cpp_library)
     set(args_BINARY_SCHEMAS_DIR "${PROJECT_BINARY_DIR}/flatbuffers")
   endif()
 
-  # Convert schema files to absolute paths
   unset(source_paths)
   foreach(source IN LISTS args_SCHEMAS)
     cmake_path(IS_ABSOLUTE source is_absolute)
@@ -97,7 +108,8 @@ function(flatbuffer_cpp_library)
     endif()
   endforeach()
 
-  # Set default flatc flags if not provided
+  # A caller's FLAGS replace these rather than extending them, so the defaults are only
+  # applied when the keyword is absent.
   if(NOT args_FLAGS)
     list(APPEND args_FLAGS
       "--scoped-enums"     # Use C++ enum class
@@ -106,21 +118,19 @@ function(flatbuffer_cpp_library)
     )
   endif()
 
-  # Add include prefix if specified
   if(args_INCLUDE_PREFIX)
     list(APPEND args_FLAGS "--include-prefix" "${args_INCLUDE_PREFIX}")
   endif()
 
-  # Create output directory for generated headers
   set(generated_header_dir "${CMAKE_CURRENT_BINARY_DIR}/_flatbuffer_cpp_library/${args_TARGET}")
 
-  # Find flatc compiler
+  # FindFlatBuffers names an already-installed flatc in a variable; vcpkg and FetchContent
+  # provide an imported target instead, whose $<TARGET_FILE:...> lets the custom commands
+  # DEPEND on the tool so a flatc built from source is built first.
   if(FLATBUFFERS_FLATC_EXECUTABLE)
-    # Using FindFlatBuffers
     set(FLATC_TARGET "")
     set(FLATC "${FLATBUFFERS_FLATC_EXECUTABLE}")
   else()
-    # Using flatc target from vcpkg or FetchContent
     if(TARGET flatbuffers::flatc)
       set(FLATC_TARGET flatbuffers::flatc)
       set(FLATC "$<TARGET_FILE:flatbuffers::flatc>")
@@ -132,10 +142,10 @@ function(flatbuffer_cpp_library)
     endif()
   endif()
 
-  # Import schema dependencies
   import_dependencies(${args_TARGET} "${args_DEPENDENCIES}")
 
-  # Collect include directories from dependencies
+  # Build flatc's -I search path from the schema roots the dependencies publish, so an
+  # `include` statement crossing targets resolves during generation.
   set(include_params "")
   set(include_directories "")
   foreach(dependency ${args_DEPENDENCIES})
@@ -150,34 +160,29 @@ function(flatbuffer_cpp_library)
     endif()
   endforeach()
 
-  # Generate code for each schema
   unset(all_generated_header_files)
   unset(all_generated_binary_files)
 
   foreach(schema ${source_paths})
-    # Validate schema exists
     if(NOT EXISTS "${schema}")
       message(FATAL_ERROR "flatbuffer_cpp_library: Schema file does not exist: ${schema}")
     endif()
 
-    # Get schema filename and directory
     get_filename_component(filename ${schema} NAME_WE)
     get_filename_component(schema_directory ${schema} DIRECTORY)
 
-    # Calculate relative path from schema root
+    # The generated tree mirrors each schema's location relative to the schema root, so two
+    # schemas of the same name in different directories do not collide.
     file(RELATIVE_PATH relative_path "${args_SCHEMA_ROOT_DIR}" "${schema_directory}")
 
-    # Determine output directory
     set(output_dir "${generated_header_dir}")
     if(args_INCLUDE_PREFIX)
       cmake_path(APPEND output_dir "${args_INCLUDE_PREFIX}")
     endif()
     cmake_path(APPEND output_dir "${relative_path}")
 
-    # Generated header path
     set(generated_header "${output_dir}/${filename}_generated.h")
 
-    # Create custom command to generate header
     add_custom_command(
       OUTPUT "${generated_header}"
       COMMAND ${FLATC}
@@ -195,7 +200,6 @@ function(flatbuffer_cpp_library)
 
     list(APPEND all_generated_header_files "${generated_header}")
 
-    # Generate binary schema if directory specified
     if(args_BINARY_SCHEMAS_DIR)
       set(binary_schema_dir "${args_BINARY_SCHEMAS_DIR}")
       if(relative_path)
@@ -224,19 +228,16 @@ function(flatbuffer_cpp_library)
     endif()
   endforeach()
 
-  # Resolve the shipped placeholder translation unit. A flatbuffer library's sources are
-  # generated by custom commands, so the target has no compiled TU of its own until build
-  # time; MSVC needs a real TU to archive the static library (see commit 471e28c). Resolve
-  # it loudly so a package that failed to ship dummy.cpp fails clearly rather than silently
-  # producing an empty library (see issue #7).
+  # A flatbuffer library generates headers and binary schemas, never a translation unit, and
+  # MSVC needs a real one to archive a static library; the shipped placeholder is it. Resolving
+  # it here is a hard error, so a package that failed to ship dummy.cpp says so instead of
+  # producing an empty library in silence.
   _targets_dummy_source(dummy_file)
 
-  # Create library target
   add_library(${args_TARGET} STATIC)
 
   _targets_apply_common_target_defaults(${args_TARGET})
 
-  # Add sources
   target_sources(${args_TARGET}
     PRIVATE
       ${all_generated_header_files}
@@ -244,44 +245,38 @@ function(flatbuffer_cpp_library)
       ${source_paths}
   )
 
-  # Add the placeholder TU so the static library always has at least one real source.
   target_sources(${args_TARGET} PRIVATE "${dummy_file}")
 
-  # Add include directories
   target_include_directories(${args_TARGET}
     PUBLIC
       "$<BUILD_INTERFACE:${generated_header_dir}>"
   )
 
-  # Set schema directory property
+  # Published for dependent rules to read back as an -I entry.
   set_property(
     TARGET ${args_TARGET}
     PROPERTY FLATBUFFERS_SCHEMA_DIR "${args_SCHEMA_ROOT_DIR}"
   )
 
-  # Link to FlatBuffers runtime
   if(TARGET flatbuffers::flatbuffers)
     target_link_libraries(${args_TARGET} PUBLIC flatbuffers::flatbuffers)
   elseif(TARGET flatbuffers)
     target_link_libraries(${args_TARGET} PUBLIC flatbuffers)
   endif()
 
-  # Link dependencies
   if(args_DEPENDENCIES)
     target_link_libraries(${args_TARGET} PUBLIC ${args_DEPENDENCIES})
   endif()
 
-  # Create namespace alias
   if(EXISTS "${args_SCHEMA_ROOT_DIR}")
     file(RELATIVE_PATH relative_path_from_root "${args_SCHEMA_ROOT_DIR}" "${CMAKE_CURRENT_LIST_DIR}")
   else()
     set(relative_path_from_root "")
   endif()
 
-  # Derive the namespace root from the *enclosing* project (PROJECT_NAME), not the
-  # top-level project (CMAKE_PROJECT_NAME), so an embedded schema library keeps the alias
-  # it has standalone. This mirrors cpp_target()'s derivation; keep the two consistent
-  # (see issue #8).
+  # The namespace root is the *enclosing* project (PROJECT_NAME) rather than the top-level one
+  # (CMAKE_PROJECT_NAME), so an embedded schema library keeps the alias it has standalone.
+  # This mirrors cpp_target()'s derivation; keep the two consistent.
   set(default_folder "${PROJECT_NAME}")
   if(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
     set(default_folder "${default_folder}/${relative_path_from_root}")
@@ -291,17 +286,16 @@ function(flatbuffer_cpp_library)
   set(alias "${namespace}::${args_TARGET}")
   add_library(${alias} ALIAS ${args_TARGET})
 
-  # Set IDE folder
   if(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
     set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}/${relative_path_from_root}")
   else()
     set_target_properties(${args_TARGET} PROPERTIES FOLDER "${PROJECT_NAME}")
   endif()
 
-  # Organize files in IDE. source_group(TREE ...) hard-errors on any file outside its root,
-  # so each file list is partitioned and only the in-root files get a TREE grouping; out-of-
-  # root files (generated headers/binary schemas written to the build tree, or `..`-relative
-  # schemas) fall back to a flat group. This mirrors protobuf_cpp_library() (see issue #6).
+  # source_group(TREE ...) hard-errors on any file outside its root, so each file list is
+  # partitioned and only the in-root files get a TREE grouping; out-of-root files (generated
+  # headers and binary schemas written to the build tree, or `..`-relative schemas) fall back
+  # to a flat group.
   _targets_partition_files_by_root(
     "${generated_header_dir}" in_tree_headers out_of_tree_headers
     ${all_generated_header_files})
