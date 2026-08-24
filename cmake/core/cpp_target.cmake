@@ -4,8 +4,8 @@
 
 include_guard(GLOBAL)
 
-# The IDE generators ignore a target's FOLDER property unless this is on, and every rule here
-# sets one, so it is turned on for the whole build as soon as this module is included.
+# The IDE generators ignore a target's FOLDER property unless this is on, so it is turned on
+# for the whole build as soon as this module is included.
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # Whether cpp_target injects MSVC edit-and-continue debug info (/ZI) into Debug builds. /ZI is a
@@ -57,11 +57,11 @@ include("${_TARGETS_MODULE_DIR}/toolchain_hygiene.cmake")
 # <prefix>_UNPARSED_ARGUMENTS, MISSING is its <prefix>_KEYWORDS_MISSING_VALUES, and
 # ARGN carries the rule's full set of valid keywords (printed as a hint). Values are
 # passed positionally rather than under keywords so a stray token cannot collide with
-# this helper's own argument names. An unrecognized argument is a hard error: it is
-# almost always a misspelled keyword or a value that lost its keyword, either of which
-# silently changes the target if left unchecked -- a dropped DEPENDENCIES value links
-# nothing, and a misspelled SOURCES keyword turns a file list into a target with no
-# sources. A keyword given no values is only a warning.
+# this helper's own argument names. An unrecognized argument is a hard error, because it
+# is almost always a misspelled keyword: `SOURCE main.cpp` leaves the target with no
+# sources, and a misspelling after a multi-value keyword is absorbed into that keyword's
+# list, where it becomes a file name CMake then cannot find. A keyword given no values is
+# only a warning.
 function(_targets_check_args RULE UNPARSED MISSING)
   if(NOT "${UNPARSED}" STREQUAL "")
     string(REPLACE ";" ", " _unparsed "${UNPARSED}")
@@ -578,8 +578,9 @@ endfunction()
 # WARNINGS names a level that does not exist; STATIC and SHARED are both given, or either is
 # given for an executable; EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS are combined, or
 # either is given for an executable; grouped SOURCES is combined with HEADERS; a library
-# offers its consumers nothing; or the placeholder translation unit is missing from the
-# package.
+# offers its consumers nothing; a DEPENDENCIES label rooted at this project names a
+# subdirectory that does not declare it (see import_dependencies); or the placeholder
+# translation unit is missing from the package.
 function(cpp_target)
   set(options
     STATIC

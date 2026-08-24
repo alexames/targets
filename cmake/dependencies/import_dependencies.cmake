@@ -40,7 +40,7 @@ function(_targets_binary_root out_var)
   endif()
 endfunction()
 
-# add_subdirectory() the source root's SUBDIRECTORY, once per configure. TARGET names the
+# add_subdirectory() the source root's subdirectory, once per configure. target names the
 # target whose dependency triggered the import, for diagnostics.
 #
 # A directory already on the import stack means a cycle, and is a FATAL_ERROR that prints the
@@ -127,8 +127,8 @@ function(import_subdirectory subdirectory)
   _targets_import_subdirectory_real("<root>" "${subdirectory}")
 endfunction()
 
-# Import the subdirectories that declare TARGET's namespaced dependencies, so a target can be
-# named before the CMakeLists that creates it has been processed. DEPENDENCIES is one
+# Import the subdirectories that declare target's namespaced dependencies, so a target can be
+# named before the CMakeLists that creates it has been processed. dependencies is one
 # semicolon-separated list of labels, quoted at the call site.
 #
 # A label already resolving to a target is left alone. Otherwise its leading namespace must be
@@ -165,8 +165,8 @@ function(import_dependencies target dependencies)
   endforeach()
 endfunction()
 
-# Import every subdirectory of DIR that holds a CMakeLists.txt, recursively. DIR is absolute;
-# each directory found is imported relative to the enclosing project's source root, so DIR
+# Import every subdirectory of dir that holds a CMakeLists.txt, recursively. dir is absolute;
+# each directory found is imported relative to the enclosing project's source root, so it
 # must lie under it.
 #
 # The build directory is skipped. Directories are visited in glob order, so a project whose

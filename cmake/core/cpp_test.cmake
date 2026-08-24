@@ -161,9 +161,10 @@ endfunction()
 # include Targets first would silently drop tests registered in sibling and parent scopes
 # from CTest.
 #
-# Creates nothing and returns when BUILD_TESTING is defined and false. FATAL_ERROR when
-# TARGET is missing, SIZE names a size that does not exist, TIMEOUT is not a non-negative
-# integer, or cpp_target rejects the forwarded arguments.
+# Creates nothing and returns when BUILD_TESTING is defined and false. A test-only keyword
+# written with no values is a WARNING and is ignored. FATAL_ERROR when TARGET is missing,
+# SIZE names a size that does not exist, TIMEOUT is not a non-negative integer, or
+# cpp_target rejects the forwarded arguments.
 function(cpp_test)
   # Honor the standard CTest opt-out. When BUILD_TESTING is explicitly OFF (typically set
   # by include(CTest)), create no test target and acquire no test framework. Left

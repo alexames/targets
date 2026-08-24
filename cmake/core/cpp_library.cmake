@@ -8,8 +8,8 @@ include("${_TARGETS_CORE_DIR}/cpp_target.cmake")
 # Define a C++ library target: STATIC unless SHARED is given, with a namespace alias derived
 # from its directory. Takes cpp_target()'s whole argument surface apart from TYPE, under the
 # grammar a library uses -- every visibility-taking list requires PUBLIC or PRIVATE on each
-# entry. docs/API.md is the reference; cpp_target() above carries the contract and the
-# failure conditions.
+# entry. docs/API.md is the reference; cpp_target() carries the contract and the failure
+# conditions.
 function(cpp_library)
   cpp_target(
     TYPE LIBRARY

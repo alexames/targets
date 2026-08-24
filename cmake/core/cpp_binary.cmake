@@ -9,7 +9,7 @@ include("${_TARGETS_CORE_DIR}/cpp_target.cmake")
 # runtime DLLs of its shared dependencies staged beside it. Takes cpp_target()'s whole
 # argument surface apart from TYPE, under the grammar a leaf target uses -- PRIVATE is implied
 # on every visibility-taking list and PUBLIC is rejected. docs/API.md is the reference;
-# cpp_target() above carries the contract and the failure conditions.
+# cpp_target() carries the contract and the failure conditions.
 function(cpp_binary)
   cpp_target(
     TYPE EXECUTABLE
