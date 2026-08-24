@@ -17,15 +17,16 @@ folders are organized automatically.
 ```cmake
 cpp_library(
     TARGET MathLib
-    SOURCES  src/calculator.cpp
-    HEADERS  mathlib/calculator.h
+    SOURCES
+        PUBLIC  mathlib/calculator.h
+        PRIVATE src/calculator.cpp
     INCLUDES PUBLIC include/
     DEPENDENCIES PUBLIC fmt::fmt
 )
 
 cpp_binary(
     TARGET CalculatorApp
-    SOURCES src/main.cpp
+    SOURCES PRIVATE src/main.cpp
     DEPENDENCIES PRIVATE MathLib
 )
 ```
@@ -89,7 +90,7 @@ project(MyProject)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/third_party/targets/cmake")
 include(Targets)
 
-cpp_library(TARGET MyLib SOURCES src/mylib.cpp INCLUDES PUBLIC include/)
+cpp_library(TARGET MyLib SOURCES PRIVATE src/mylib.cpp INCLUDES PUBLIC include/)
 ```
 
 This is exactly how the [`examples/`](examples/) build.

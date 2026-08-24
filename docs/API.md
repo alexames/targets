@@ -12,8 +12,7 @@ cpp_library(
     [STATIC | SHARED]
     [EXPORT_HEADER]
     [WINDOWS_EXPORT_ALL_SYMBOLS]
-    [SOURCES <file>...]
-    [HEADERS <file>...]
+    [SOURCES <PUBLIC|PRIVATE> <file>...]
     [SOURCE_DIR <dir>]
     [HEADER_DIR <dir>]
     [NAMESPACE_ROOT <dir>]
@@ -46,7 +45,7 @@ cpp_library(
 - **STATIC** / **SHARED**: Flags selecting the library's linkage. A library is STATIC by
   default (or with an explicit `STATIC`) and SHARED with `SHARED`. The two are mutually
   exclusive — passing both is a configure-time error. Ignored when the target resolves to
-  a header-only INTERFACE library (HEADERS but no SOURCES).
+  a header-only INTERFACE library (public files, no private translation unit).
 - **EXPORT_HEADER**: Flag — run CMake's `GenerateExportHeader` for this target, producing a
   `<target>_export.h` (defining the `<TARGET>_EXPORT` macro) on the target's PUBLIC include
   path, and set `CXX_VISIBILITY_PRESET hidden` / `VISIBILITY_INLINES_HIDDEN`. This is how a
@@ -57,14 +56,16 @@ cpp_library(
 - **WINDOWS_EXPORT_ALL_SYMBOLS**: Flag — set the `WINDOWS_EXPORT_ALL_SYMBOLS` target property
   so a SHARED library auto-exports every symbol on Windows, as an alternative to annotating
   the API with `EXPORT_HEADER`'s macro. Mutually exclusive with `EXPORT_HEADER`.
-- **SOURCES**: List of source files (.cpp, .cc, .cxx, etc.), resolved relative to
-  `SOURCE_DIR`. Targets does not glob — sources are always listed explicitly.
-- **HEADERS**: List of header files (.h, .hpp, .hxx, etc.), resolved relative to
-  `HEADER_DIR`.
-- **SOURCE_DIR**: Base directory for resolving relative `SOURCES` (default: the calling
-  `CMakeLists.txt` directory). Absolute source paths are used as-is.
-- **HEADER_DIR**: Base directory for resolving relative `HEADERS` (default:
-  `${CMAKE_CURRENT_LIST_DIR}/Include`, capital "I"). Absolute header paths are used as-is.
+- **SOURCES**: The target's files, grouped under PUBLIC and PRIVATE. PUBLIC entries are its
+  interface — the files consumers include — and resolve relative to `HEADER_DIR`; PRIVATE
+  entries are its implementation and resolve relative to `SOURCE_DIR`. A private header
+  belongs under PRIVATE, beside the `.cpp` it serves. Targets does not glob — files are
+  always listed explicitly. See
+  [Source visibility (SOURCES)](#source-visibility-sources).
+- **SOURCE_DIR**: Base directory for resolving relative PRIVATE entries (default: the
+  calling `CMakeLists.txt` directory). Absolute paths are used as-is.
+- **HEADER_DIR**: Base directory for resolving relative PUBLIC entries (default:
+  `${CMAKE_CURRENT_LIST_DIR}/Include`, capital "I"). Absolute paths are used as-is.
 - **NAMESPACE_ROOT**: Root directory for deriving the namespace alias and IDE folder
   (default: `${PROJECT_SOURCE_DIR}/Source`). See
   [Automatic Namespace Aliasing](#automatic-namespace-aliasing).
@@ -78,7 +79,7 @@ cpp_library(
   PRIVATE
   - PUBLIC: Dependencies exported to consumers
   - PRIVATE: Dependencies only for building this target
-- `SOURCES`, `HEADERS`, `INCLUDES`, `DEFINITIONS`, and `DEPENDENCIES` (like `COPTS`,
+- `SOURCES`, `INCLUDES`, `DEFINITIONS`, and `DEPENDENCIES` (like `COPTS`,
   `LINKOPTS`, and `DATA`) accept inline **platform-conditional entries** — `WINDOWS`,
   `LINUX`, `MACOS`, `ANDROID`, `EMSCRIPTEN`, and `DEFAULT` buckets. See
   [Platform-conditional entries](#platform-conditional-entries) under Advanced Features.
@@ -128,11 +129,13 @@ cpp_library(
 cpp_library(
     TARGET MyMathLib
     SOURCES
-        src/calculator.cpp
-        src/geometry.cpp
-    HEADERS
-        include/mymath/calculator.h
-        include/mymath/geometry.h
+        PUBLIC
+            mymath/calculator.h
+            mymath/geometry.h
+        PRIVATE
+            src/calculator.cpp
+            src/geometry.cpp
+            src/detail/lookup_tables.h
     INCLUDES
         PUBLIC
             include/
@@ -158,9 +161,11 @@ cpp_library(
 
 #### Header-only (INTERFACE) libraries
 
-Passing `HEADERS` but no `SOURCES` produces an **INTERFACE** (header-only) library. Such a
-target has no private compile step and produces no built artifact, so only a subset of the
-arguments applies:
+A library that exposes PUBLIC files and has no PRIVATE **translation unit** to compile is an
+**INTERFACE** (header-only) library. Listing a private header does not make it compiled —
+there is nothing to compile — so a header-only library keeps its detail headers under
+PRIVATE without changing kind. Such a target has no private compile step and produces no
+built artifact, so only a subset of the arguments applies:
 
 - **Applied:** the **PUBLIC** `INCLUDES`, `DEFINITIONS`, and `DEPENDENCIES` (as interface
   usage-requirements), `CXX_STANDARD` (as an interface feature requirement), `FOLDER`, and
@@ -220,8 +225,9 @@ project(MyProject VERSION 1.2.0)
 
 cpp_library(
     TARGET MyLib
-    SOURCES src/mylib.cpp
-    HEADERS mylib/mylib.h
+    SOURCES
+        PUBLIC mylib/mylib.h
+        PRIVATE src/mylib.cpp
     HEADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
     INCLUDES PUBLIC include/
     VERSION ${PROJECT_VERSION}
@@ -265,8 +271,7 @@ Define a C++ executable target.
 ```cmake
 cpp_binary(
     TARGET <name>
-    [SOURCES <file>...]
-    [HEADERS <file>...]
+    [SOURCES <PUBLIC|PRIVATE> <file>...]
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
     [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
     [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
@@ -304,8 +309,9 @@ cpp_binary(
 cpp_binary(
     TARGET MyApp
     SOURCES
-        src/main.cpp
-        src/app.cpp
+        PRIVATE
+            src/main.cpp
+            src/app.cpp
     DEPENDENCIES
         PRIVATE
             MyMathLib
@@ -328,8 +334,7 @@ all link against the same `GTest::gtest_main`.
 ```cmake
 cpp_test(
     TARGET <name>
-    [SOURCES <file>...]
-    [HEADERS <file>...]
+    [SOURCES <PUBLIC|PRIVATE> <file>...]
     [INCLUDES <PUBLIC|PRIVATE> <dir>...]
     [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
     [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
@@ -382,8 +387,9 @@ Enable testing at your **top-level** `CMakeLists.txt` with `enable_testing()` or
 cpp_test(
     TARGET TestMyMath
     SOURCES
-        test/test_calculator.cpp
-        test/test_geometry.cpp
+        PRIVATE
+            test/test_calculator.cpp
+            test/test_geometry.cpp
     DEPENDENCIES
         PRIVATE
             MyMathLib
@@ -763,6 +769,7 @@ is built standalone or embedded in a larger build via `add_subdirectory`/`FetchC
 ### Access Specifiers
 
 All functions support PUBLIC/PRIVATE access specifiers for:
+- **SOURCES**: The target's files
 - **INCLUDES**: Include directories
 - **DEFINITIONS**: Preprocessor definitions
 - **DEPENDENCIES**: Link dependencies
@@ -770,14 +777,86 @@ All functions support PUBLIC/PRIVATE access specifiers for:
 **PUBLIC**: Transitive - exported to targets that depend on this one
 **PRIVATE**: Non-transitive - only used when building this target
 
-The access keyword is **required**: every value of `INCLUDES`, `DEFINITIONS`, and
-`DEPENDENCIES` must appear under a `PUBLIC` or `PRIVATE` keyword. Values placed before
+The access keyword is **required**: every value of `SOURCES`, `INCLUDES`, `DEFINITIONS`,
+and `DEPENDENCIES` must appear under a `PUBLIC` or `PRIVATE` keyword. Values placed before
 the first keyword are rejected with a configure-time error rather than silently
-dropped.
+dropped. `SOURCES` also accepts a deprecated bare list; see
+[Source visibility (SOURCES)](#source-visibility-sources).
+
+### Source visibility (SOURCES)
+
+`SOURCES` lists every file that belongs to a target, grouped by who may include it —
+following Bazel's `hdrs` / `srcs` split, and the same `PUBLIC`/`PRIVATE` grammar the other
+list arguments use:
+
+```cmake
+cpp_library(
+    TARGET Widgets
+    SOURCES
+        PUBLIC
+            widgets/Widget.hpp          # resolved against HEADER_DIR
+        PRIVATE
+            Widget.cpp                  # resolved against SOURCE_DIR
+            detail/LayoutCache.hpp      # a private header, beside the .cpp it serves
+)
+```
+
+- **PUBLIC** entries are the target's interface. They resolve against `HEADER_DIR`
+  (default `<dir>/Include`) and appear in the IDE's "Header Files" group.
+- **PRIVATE** entries are its implementation. They resolve against `SOURCE_DIR` (default
+  the calling `CMakeLists.txt` directory) and appear in "Source Files".
+- A `.cpp` under **PUBLIC** is legal, and is how you declare a template implementation or
+  `.inl` that consumers include: what PUBLIC means is "resolved against `HEADER_DIR`, part
+  of the interface", not "not compiled".
+- A library is **header-only** (INTERFACE) when it has PUBLIC files and no PRIVATE
+  translation unit. Private headers do not change that — there is nothing to compile.
+- On an executable (`cpp_binary`, `cpp_test`) PUBLIC is accepted with no diagnostic and
+  resolves the same way. An executable has no consumers, so the two groups differ only in
+  base directory there.
+- Platform sentinels nest *inside* a visibility group, exactly as they do for
+  `DEPENDENCIES`. See [Platform-conditional entries](#platform-conditional-entries).
+
+#### Migrating from SOURCES / HEADERS
+
+The older spelling — a bare `SOURCES` list plus a separate `HEADERS` list — still works and
+is deprecated. It was already this same split under different names: `HEADERS` resolved
+against `HEADER_DIR` and `SOURCES` against `SOURCE_DIR`. So the migration is mechanical, and
+for a project whose libraries all have at least one source file nothing changes about any
+target:
+
+```cmake
+# Before                             # After
+SOURCES                              SOURCES
+    Widget.cpp                           PUBLIC
+    detail/LayoutCache.hpp                   widgets/Widget.hpp
+HEADERS                                  PRIVATE
+    widgets/Widget.hpp                       Widget.cpp
+                                             detail/LayoutCache.hpp
+```
+
+Existing `SOURCES` entries become `PRIVATE`, existing `HEADERS` entries become `PUBLIC`.
+
+Two rules keep a half-finished migration from configuring into something you did not mean:
+
+- **A `SOURCES` list is one spelling or the other, decided by its first entry.** Opening
+  with `PUBLIC` or `PRIVATE` selects the grouped form; anything else is the bare list.
+  Opening bare and naming an access keyword later is a configure-time error, because the
+  entries ahead of the keyword have no reading — under the bare one the keyword becomes a
+  file name, and under the grouped one they are exactly what the access-specifier check
+  rejects.
+- **Grouped `SOURCES` and `HEADERS` in one call is a configure-time error.** They are two
+  spellings of the same public file list; move the `HEADERS` entries under `SOURCES PUBLIC`.
+
+The deprecated spelling reports itself with CMake's own deprecation machinery, so
+`-Wno-deprecated` silences it and `-Werror=deprecated` turns it into a configure error. Only
+the **first** such call of a configure is reported, because a project with hundreds of
+targets would otherwise bury every other message; pass
+`-DTARGETS_WARN_ALL_LEGACY_SOURCES=ON` to have every remaining call name its
+`CMakeLists.txt` line, which is what you want while doing the migration.
 
 ### Platform-conditional entries
 
-The list arguments `SOURCES`, `HEADERS`, `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`,
+The list arguments `SOURCES`, `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`,
 `COPTS`, `LINKOPTS`, and `DATA` support inline platform filtering, so a single call can
 describe a target across platforms without a surrounding `if(WIN32)/elseif(UNIX)` block.
 The current build platform is auto-detected at configure time and only the matching
@@ -804,20 +883,21 @@ Token rules:
   for that argument.
 - A specific platform bucket always wins over `DEFAULT` when both match.
 
-For the visibility-carrying lists (`INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`, `COPTS`,
-`LINKOPTS`), the `PUBLIC`/`PRIVATE` keyword is parsed first, so the sentinels appear
-*inside* a visibility group and only affect that group. `SOURCES`, `HEADERS`, and `DATA`
-carry no visibility, so their sentinels appear at the top level.
+For the visibility-carrying lists (`SOURCES`, `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`,
+`COPTS`, `LINKOPTS`), the `PUBLIC`/`PRIVATE` keyword is parsed first, so the sentinels appear
+*inside* a visibility group and only affect that group. `DATA` carries no visibility, so its
+sentinels appear at the top level.
 
 ```cmake
 cpp_library(
     TARGET Platform
     SOURCES
-        common.cpp              # always compiled
-        WINDOWS   win32.cpp
-        LINUX     posix.cpp
-        MACOS     posix.cpp cocoa.mm
-        DEFAULT   stub.cpp      # any platform not listed above
+        PRIVATE
+            common.cpp          # always compiled
+            WINDOWS   win32.cpp
+            LINUX     posix.cpp
+            MACOS     posix.cpp cocoa.mm
+            DEFAULT   stub.cpp  # any platform not listed above
     DEPENDENCIES
         PUBLIC   fmt::fmt        # PUBLIC, every platform
         WINDOWS  ws2_32          # PUBLIC (still inside the PUBLIC group), Windows only
@@ -847,16 +927,16 @@ opens a section as usual; it escapes itself too (`LITERAL LITERAL` yields a lite
 
 ### Source and header base directories
 
-Targets does **not** glob or auto-discover source files — you always list `SOURCES` and
-`HEADERS` explicitly. Relative entries in those lists are resolved against a base directory:
+Targets does **not** glob or auto-discover source files — you always list `SOURCES`
+explicitly. Relative entries are resolved against a base directory chosen by their
+visibility:
 
-- `SOURCES` resolve relative to **`SOURCE_DIR`** (default: the calling `CMakeLists.txt`
-  directory, `CMAKE_CURRENT_LIST_DIR`).
-- `HEADERS` resolve relative to **`HEADER_DIR`** (default:
+- **PRIVATE** entries resolve relative to **`SOURCE_DIR`** (default: the calling
+  `CMakeLists.txt` directory, `CMAKE_CURRENT_LIST_DIR`).
+- **PUBLIC** entries resolve relative to **`HEADER_DIR`** (default:
   `${CMAKE_CURRENT_LIST_DIR}/Include`, capital "I").
 
-Pass `SOURCE_DIR` / `HEADER_DIR` to change those bases; an absolute path in `SOURCES` /
-`HEADERS` is used as-is.
+Pass `SOURCE_DIR` / `HEADER_DIR` to change those bases; an absolute path is used as-is.
 
 ### IDE Integration
 

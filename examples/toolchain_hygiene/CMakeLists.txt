@@ -6,6 +6,12 @@
 # compiler-appropriate flags on every toolchain. WERROR and SANITIZERS are intentionally
 # NOT used here so the example stays buildable everywhere; their exact flag mapping is
 # covered by the configure-mode tests under tests/integration/cpp_target_hygiene.
+#
+# This is also the one example left on the deprecated bare SOURCES / HEADERS spelling, on
+# purpose: every other example shows the PUBLIC/PRIVATE spelling to prefer, and this one
+# keeps the back-compat promise built and linked on all three CI toolchains (as
+# tests/consume_port does from the installed package). Configuring it prints the deprecation
+# report, which is expected.
 
 cmake_minimum_required(VERSION 3.20)
 project(ToolchainHygiene VERSION 1.0.0 LANGUAGES CXX)

@@ -76,10 +76,11 @@ gtest_discover_tests(TestMyLib)
 cpp_library(
     TARGET MyLib
     SOURCES
-        src/mylib.cpp
-        src/utils.cpp
-    HEADERS
-        include/mylib.h
+        PUBLIC
+            include/mylib.h
+        PRIVATE
+            src/mylib.cpp
+            src/utils.cpp
     INCLUDES
         PUBLIC
             include/
@@ -99,7 +100,8 @@ cpp_library(
 cpp_binary(
     TARGET MyApp
     SOURCES
-        src/main.cpp
+        PRIVATE
+            src/main.cpp
     DEPENDENCIES
         PRIVATE
             MyLib
@@ -110,7 +112,8 @@ cpp_binary(
 cpp_test(
     TARGET TestMyLib
     SOURCES
-        test/test_mylib.cpp
+        PRIVATE
+            test/test_mylib.cpp
     DEPENDENCIES
         PRIVATE
             MyLib
@@ -164,7 +167,7 @@ target_link_libraries(MyLib PUBLIC fmt::fmt)
 # After
 cpp_library(
     TARGET MyLib
-    SOURCES src/a.cpp src/b.cpp
+    SOURCES PRIVATE src/a.cpp src/b.cpp
     INCLUDES PUBLIC include/
     DEPENDENCIES PUBLIC fmt::fmt
 )
@@ -182,7 +185,7 @@ target_link_libraries(MyApp PRIVATE MyLib)
 # After
 cpp_binary(
     TARGET MyApp
-    SOURCES src/main.cpp
+    SOURCES PRIVATE src/main.cpp
     DEPENDENCIES PRIVATE MyLib
 )
 ```
@@ -200,7 +203,7 @@ gtest_discover_tests(TestMyLib)
 # After (cpp_test auto-links GTest::gtest_main and runs gtest_discover_tests for you)
 cpp_test(
     TARGET TestMyLib
-    SOURCES test/test.cpp
+    SOURCES PRIVATE test/test.cpp
     DEPENDENCIES PRIVATE MyLib
 )
 ```
@@ -222,7 +225,7 @@ import_all("${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
 cpp_binary(
     TARGET MyApp
-    SOURCES src/main.cpp
+    SOURCES PRIVATE src/main.cpp
     DEPENDENCIES
         PRIVATE
             MyProject::Core::Engine
@@ -237,13 +240,14 @@ cpp_binary(
 ```cmake
 cpp_library(
     TARGET MyHeaderLib
-    HEADERS
-        include/myheaderlib.h
+    SOURCES
+        PUBLIC
+            include/myheaderlib.h
     INCLUDES
         PUBLIC
             include/
 )
-# CMake will automatically create an INTERFACE library
+# With no PRIVATE translation unit to compile, this becomes an INTERFACE library
 ```
 
 #### Pattern: Multiple Source Directories
@@ -252,13 +256,14 @@ cpp_library(
 cpp_library(
     TARGET MyLib
     SOURCES
-        src/core/a.cpp
-        src/core/b.cpp
-        src/utils/c.cpp
-    HEADERS
-        include/mylib/core/a.h
-        include/mylib/core/b.h
-        include/mylib/utils/c.h
+        PUBLIC
+            include/mylib/core/a.h
+            include/mylib/core/b.h
+            include/mylib/utils/c.h
+        PRIVATE
+            src/core/a.cpp
+            src/core/b.cpp
+            src/utils/c.cpp
     INCLUDES
         PUBLIC include/
 )
@@ -266,7 +271,7 @@ cpp_library(
 
 #### Pattern: Platform-Specific Code
 
-Don't build lists with `if(WIN32)/elseif(UNIX)` before the call. `SOURCES`, `HEADERS`,
+Don't build lists with `if(WIN32)/elseif(UNIX)` before the call. `SOURCES`,
 `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`, `COPTS`, `LINKOPTS`, and `DATA` accept inline
 **platform buckets** — list unconditional entries first, then group the rest under a
 `WINDOWS`, `LINUX`, `MACOS`, `ANDROID`, `EMSCRIPTEN`, or `DEFAULT` sentinel. Targets keeps
@@ -285,17 +290,18 @@ endif()
 
 cpp_library(
     TARGET MyLib
-    SOURCES ${SOURCES}
+    SOURCES PRIVATE ${SOURCES}
 )
 
 # After
 cpp_library(
     TARGET MyLib
     SOURCES
-        src/common.cpp        # every platform
-        WINDOWS src/windows.cpp
-        LINUX   src/unix.cpp
-        DEFAULT src/generic.cpp   # any other platform
+        PRIVATE
+            src/common.cpp            # every platform
+            WINDOWS src/windows.cpp
+            LINUX   src/unix.cpp
+            DEFAULT src/generic.cpp   # any other platform
 )
 ```
 
@@ -313,7 +319,7 @@ endif()
 # After
 cpp_library(
     TARGET MyLib
-    SOURCES src/mylib.cpp
+    SOURCES PRIVATE src/mylib.cpp
     DEPENDENCIES
         PUBLIC  fmt::fmt        # every platform
         WINDOWS ws2_32          # Windows only, still PUBLIC
@@ -340,7 +346,7 @@ endif()
 
 cpp_library(
     TARGET MyLib
-    SOURCES src/mylib.cpp
+    SOURCES PRIVATE src/mylib.cpp
     DEPENDENCIES
         PUBLIC ${DEPS}
 )
@@ -385,7 +391,7 @@ flatbuffer_cpp_library(
    ```cmake
    cpp_library(
        TARGET MyLargeLib
-       SOURCES # ... many files ...
+       SOURCES PRIVATE # ... many files ...
        UNITY_BUILD               # flag — presence enables it; takes no value
        UNITY_BUILD_BATCH_SIZE 20
    )
@@ -395,7 +401,7 @@ flatbuffer_cpp_library(
    ```cmake
    cpp_library(
        TARGET MyLib
-       SOURCES # ...
+       SOURCES PRIVATE # ...
        PRECOMPILE_HEADERS
            include/mylib/common.h
            <vector>
