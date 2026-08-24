@@ -1223,7 +1223,39 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
       -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
       -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_edit_and_continue_off"
   )
+
+  # LTO under a launcher on the property route, where the format the property names is the
+  # one in force and nothing is appended over it.
+  add_test(
+    NAME cpp_target_debug_format_launcher_lto_property
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=launcher_lto_property
+      -DDEBUG_FORMAT_POLICY=NEW
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_launcher_lto_property"
+  )
 endif()
+
+# /GL and /ZI cannot appear on one compile line, so one of the two has to stand down: the
+# LTO target keeps interprocedural optimization and gives up edit-and-continue, while the
+# library beside it keeps both of its own settings. The launcher variant pins that a compile
+# cache configured on top of LTO still leaves exactly one debug format in force. Every
+# assertion is a FATAL_ERROR, so the exit code decides.
+add_test(
+  NAME cpp_target_debug_format_lto
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=lto
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_lto"
+)
+
+add_test(
+  NAME cpp_target_debug_format_launcher_lto
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=launcher_lto
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_debug_format"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_debug_format_launcher_lto"
+)
 
 # Target-wide settings must reach every compiled target, not only the ones cpp_target creates.
 # flatbuffer_cpp_library, protobuf_cpp_library and embed_binary each build their target with

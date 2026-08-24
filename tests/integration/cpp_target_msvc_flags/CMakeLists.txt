@@ -75,8 +75,24 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
 
   if(TARGETS_MSVC_EDIT_AND_CONTINUE
      AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
-    if(NOT "$<$<CONFIG:Debug>:/ZI>" IN_LIST _copts)
-      message(FATAL_ERROR "expected Debug-gated /ZI generator expression in COMPILE_OPTIONS: ${_copts}")
+    # The single entry that may ask for /ZI is conditioned on Debug and on the target not
+    # being compiled with whole-program optimization, which cl.exe refuses to pair it with.
+    set(_edit_and_continue "")
+    foreach(_opt IN LISTS _copts)
+      if(_opt MATCHES "/ZI")
+        list(APPEND _edit_and_continue "${_opt}")
+      endif()
+    endforeach()
+    list(LENGTH _edit_and_continue _edit_and_continue_count)
+    if(NOT _edit_and_continue_count EQUAL 1)
+      message(FATAL_ERROR
+        "expected exactly one edit-and-continue entry in COMPILE_OPTIONS: ${_copts}")
+    endif()
+    if(NOT _edit_and_continue MATCHES "CONFIG:Debug"
+       OR NOT _edit_and_continue MATCHES "INTERPROCEDURAL_OPTIMIZATION")
+      message(FATAL_ERROR
+        "the edit-and-continue entry must be gated on Debug and on whole-program "
+        "optimization: ${_edit_and_continue}")
     endif()
   else()
     # Opted out or ARM/ARM64: /ZI must be absent in every form.
