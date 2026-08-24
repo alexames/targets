@@ -150,7 +150,7 @@ elseif(SCENARIO STREQUAL "arg_order")
     ARGS --shuffle
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}"
     SOURCES "${_src}"
-    DEFINITIONS PUBLIC ORDER_MACRO=1)
+    DEFINITIONS PRIVATE ORDER_MACRO=1)
   get_target_property(_srcs OrderTest SOURCES)
   if(NOT "${_srcs}" MATCHES "test_main\\.cpp")
     message(FATAL_ERROR "arg_order: SOURCES after LABELS/ARGS were swallowed: '${_srcs}'")

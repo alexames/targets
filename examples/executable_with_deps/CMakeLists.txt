@@ -15,11 +15,9 @@ add_subdirectory(../basic_library "${CMAKE_CURRENT_BINARY_DIR}/basic_library")
 cpp_binary(
     TARGET CalculatorApp
     SOURCES
-        PRIVATE
-            src/main.cpp
+        src/main.cpp
     DEPENDENCIES
-        PRIVATE
-            MathLib
+        MathLib
     CXX_STANDARD 17
 )
 

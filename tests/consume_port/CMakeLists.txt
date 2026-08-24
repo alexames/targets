@@ -47,7 +47,7 @@ cpp_binary(
   TARGET greet
   SOURCES src/main.cpp
   DEPENDENCIES
-    PRIVATE Greeter Motto
+    Greeter Motto
 )
 
 # Exercise the source-less STATIC fallback from the INSTALLED package layout (issue #7).

@@ -19,7 +19,7 @@ include(Targets)
 # "message.txt" next to DataApp's executable.
 cpp_binary(
     TARGET DataApp
-    SOURCES PRIVATE src/main.cpp
+    SOURCES src/main.cpp
     DATA data/message.txt
     CXX_STANDARD 17
 )

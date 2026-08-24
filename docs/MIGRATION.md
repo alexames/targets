@@ -100,11 +100,9 @@ cpp_library(
 cpp_binary(
     TARGET MyApp
     SOURCES
-        PRIVATE
-            src/main.cpp
+        src/main.cpp
     DEPENDENCIES
-        PRIVATE
-            MyLib
+        MyLib
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
     FOLDER "MyProject/Apps"
 )
@@ -112,11 +110,9 @@ cpp_binary(
 cpp_test(
     TARGET TestMyLib
     SOURCES
-        PRIVATE
-            test/test_mylib.cpp
+        test/test_mylib.cpp
     DEPENDENCIES
-        PRIVATE
-            MyLib
+        MyLib
 )
 ```
 
@@ -185,8 +181,8 @@ target_link_libraries(MyApp PRIVATE MyLib)
 # After
 cpp_binary(
     TARGET MyApp
-    SOURCES PRIVATE src/main.cpp
-    DEPENDENCIES PRIVATE MyLib
+    SOURCES src/main.cpp
+    DEPENDENCIES MyLib
 )
 ```
 
@@ -203,8 +199,8 @@ gtest_discover_tests(TestMyLib)
 # After (cpp_test auto-links GTest::gtest_main and runs gtest_discover_tests for you)
 cpp_test(
     TARGET TestMyLib
-    SOURCES PRIVATE test/test.cpp
-    DEPENDENCIES PRIVATE MyLib
+    SOURCES test/test.cpp
+    DEPENDENCIES MyLib
 )
 ```
 
@@ -225,11 +221,10 @@ import_all("${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
 cpp_binary(
     TARGET MyApp
-    SOURCES PRIVATE src/main.cpp
+    SOURCES src/main.cpp
     DEPENDENCIES
-        PRIVATE
-            MyProject::Core::Engine
-            MyProject::Rendering::Graphics
+        MyProject::Core::Engine
+        MyProject::Rendering::Graphics
 )
 ```
 

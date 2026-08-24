@@ -45,8 +45,7 @@ cpp_binary(
     SOURCES
         src/main.cpp
     DEPENDENCIES
-        PRIVATE
-            HygieneMath
+        HygieneMath
     CXX_STANDARD 17
     WARNINGS strict
     LTO

@@ -26,8 +26,8 @@ cpp_library(
 
 cpp_binary(
     TARGET CalculatorApp
-    SOURCES PRIVATE src/main.cpp
-    DEPENDENCIES PRIVATE MathLib
+    SOURCES src/main.cpp
+    DEPENDENCIES MathLib
 )
 ```
 
