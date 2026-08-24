@@ -42,7 +42,11 @@ function(count_deprecation_banners LABEL COUNT_VAR)
       "it did not create both targets:\n${output}")
   endif()
 
-  string(REGEX MATCHALL "CMake Deprecation Warning" banners "${output}")
+  # CMake 4.4 renamed the banner message(DEPRECATION) prints: "CMake Deprecation Warning at"
+  # became "CMake Warning (deprecated) at" when CMP0218 reworked diagnostics. Both spellings
+  # count, or this stops counting anything on half the supported CMake versions.
+  string(REGEX MATCHALL
+    "CMake (Deprecation Warning|Warning [(]deprecated[)]) at" banners "${output}")
   list(LENGTH banners banner_count)
   set(${COUNT_VAR} "${banner_count}" PARENT_SCOPE)
 endfunction()

@@ -72,6 +72,15 @@ add_test(
 set_tests_properties(cpp_target_valid_visibility PROPERTIES
   PASS_REGULAR_EXPRESSION "VALID_OK")
 
+# The banner message(DEPRECATION) prints. Matching the banner rather than the message text
+# is what proves a report is the kind -Werror=deprecated promotes to a configure error; the
+# text alone would match a STATUS message just as well. CMake 4.4 renamed it -- "CMake
+# Deprecation Warning at" became "CMake Warning (deprecated) at" when CMP0218 reworked
+# diagnostics -- so an expression carrying one spelling tests nothing on half the CMake
+# versions this project supports.
+set(_targets_deprecation_banner
+  "CMake[ \t]+(Deprecation[ \t]+Warning|Warning[ \t]+[(]deprecated[)])[ \t]+at")
+
 # SOURCES spelling (issue #66). SOURCES takes either PUBLIC/PRIVATE groups or the deprecated
 # bare list, told apart by its first entry; anything between the two is rejected. Each
 # negative scenario halts with its own "was accepted" message if the call it makes goes
@@ -116,10 +125,6 @@ set_tests_properties(cpp_target_sources_legacy_configures PROPERTIES
   PASS_REGULAR_EXPRESSION "LEGACY_SOURCES_OK"
   FAIL_REGULAR_EXPRESSION "sources_legacy:")
 
-# The PASS expression matches CMake's own "CMake Deprecation Warning at ... cpp_target.cmake"
-# banner rather than the message text, because the text alone would match just as well from a
-# STATUS message -- and only the banner proves the report is the kind -Werror=deprecated
-# promotes to an error.
 add_test(
   NAME cpp_target_sources_legacy_deprecated
   COMMAND "${CMAKE_COMMAND}"
@@ -128,7 +133,7 @@ add_test(
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_legacy_deprecated"
 )
 set_tests_properties(cpp_target_sources_legacy_deprecated PROPERTIES
-  PASS_REGULAR_EXPRESSION "CMake[ \t]+Deprecation[ \t]+Warning[ \t]+at[^\n]*cpp_target[.]cmake"
+  PASS_REGULAR_EXPRESSION "${_targets_deprecation_banner}[^\n]*cpp_target[.]cmake"
   FAIL_REGULAR_EXPRESSION "sources_legacy:")
 
 # How many reports a configure produces, which is the point of the once-per-configure guard
@@ -156,7 +161,7 @@ add_test(
 )
 set_tests_properties(cpp_target_sources_grouped PROPERTIES
   PASS_REGULAR_EXPRESSION "GROUPED_SOURCES_OK"
-  FAIL_REGULAR_EXPRESSION "sources_grouped:;CMake[ \t]+Deprecation")
+  FAIL_REGULAR_EXPRESSION "sources_grouped:;${_targets_deprecation_banner}")
 
 # One grammar everywhere: an executable takes PUBLIC file entries with no diagnostic of its
 # own, and a source file is as legal under PUBLIC as a header is.
@@ -169,7 +174,7 @@ add_test(
 )
 set_tests_properties(cpp_target_sources_public_on_executable PROPERTIES
   PASS_REGULAR_EXPRESSION "PUBLIC_ON_EXECUTABLE_OK"
-  FAIL_REGULAR_EXPRESSION "sources_public_on_executable:;CMake[ \t]+Deprecation")
+  FAIL_REGULAR_EXPRESSION "sources_public_on_executable:;${_targets_deprecation_banner}")
 
 # Source grouping robustness (regression test for issue #6). A generated source/header in
 # an out-of-source build tree (outside SOURCE_DIR/HEADER_DIR) must not fail configuration:
