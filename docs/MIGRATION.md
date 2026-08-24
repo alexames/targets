@@ -247,7 +247,8 @@ cpp_library(
         PUBLIC
             include/
 )
-# With no PRIVATE translation unit to compile, this becomes an INTERFACE library
+# With no PRIVATE translation unit to compile, this gets the placeholder TU and builds
+# as a STATIC library
 ```
 
 #### Pattern: Multiple Source Directories

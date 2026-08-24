@@ -6,8 +6,7 @@
 # in via cpp_target's WARNINGS / WERROR / SANITIZERS / LTO keywords, so no existing target
 # changes behavior. Every flag is compiler-aware -- translated per MSVC / GCC / Clang via
 # CXX_COMPILER_ID generator expressions -- and no-ops (or warns) where a toolchain cannot
-# honor it. These are compile/link settings, so they apply only to compiled targets; a
-# header-only INTERFACE library has no compile step and rejects them upstream (see issue #13).
+# honor it.
 #
 # Each flag is wrapped in its OWN generator expression (rather than a single expression
 # expanding to a ';'-list) so that the flags remain distinct list elements in the
@@ -39,9 +38,8 @@ function(_targets_validate_warnings RULE LEVEL)
   endif()
 endfunction()
 
-# Apply the opt-in hygiene knobs to a single compiled target (never an INTERFACE library).
-# Arguments are passed by keyword:
-#   TARGET     <name>                 the compiled target to configure (required)
+# Apply the opt-in hygiene knobs to a single target. Arguments are passed by keyword:
+#   TARGET     <name>                 the target to configure (required)
 #   WARNINGS   <off|default|strict>   warning level (empty/absent -> inject nothing)
 #   WERROR                            treat warnings as errors
 #   SANITIZERS <name>...              e.g. address undefined thread

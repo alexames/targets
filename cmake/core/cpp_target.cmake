@@ -152,13 +152,13 @@ function(_targets_parse_source_visibility RULE VAR_NAME)
 endfunction()
 
 # Report in OUT_VAR whether any of the trailing entries is a translation unit -- a file the
-# compiler is asked to build -- rather than a header. This is what separates a compiled
-# library from a header-only INTERFACE one, so an entry whose type cannot be read off its
-# name counts as a translation unit: judging it the other way would turn a compiled library
-# into an INTERFACE one, silently changing what linking to it means.
+# compiler is asked to build -- rather than a header. This decides whether a target is given
+# the shipped placeholder TU, so an entry whose type cannot be read off its name counts as a
+# translation unit: a target left with nothing to compile fails configuration outright, while
+# a needless placeholder beside a real TU costs an empty object file.
 #
-# The header list must never gain a module interface unit (.ixx, .cppm): those compile,
-# and adding one would turn a library that has only module sources into an INTERFACE.
+# The header list must never gain a module interface unit (.ixx, .cppm): those compile, and
+# listing one as a header claims the opposite.
 function(_targets_any_translation_unit OUT_VAR)
   set(header_extensions h hh hpp hxx h++ hp inl inc ipp tcc tpp)
   foreach(entry IN LISTS ARGN)
@@ -226,18 +226,25 @@ function(_targets_partition_files_by_root ROOT UNDER_VAR OUTSIDE_VAR)
 endfunction()
 
 # Resolve the shipped placeholder translation unit (dummy.cpp) into OUT_VAR (set in the
-# caller's scope). A source-less, non-header-only target -- e.g. a codegen STATIC library
-# whose translation units are produced by a custom command -- still needs at least one
-# real TU for some toolchains (notably MSVC) to emit an archive; dummy.cpp is that TU.
+# caller's scope). A target with no translation unit of its own -- a header-only library, or
+# a codegen STATIC library whose translation units are produced by a custom command -- still
+# needs at least one real TU for some toolchains (notably MSVC) to emit an archive;
+# dummy.cpp is that TU.
 #
-# The file ships beside the CMake modules in both the source tree (cmake/dummy.cpp) and
-# the installed package (share/targets/cmake/dummy.cpp), so the same
-# ${_TARGETS_ROOT_DIR}-relative path resolves in dev builds and for find_package
-# consumers. A missing file means a broken checkout or a package that failed to ship it,
-# which would otherwise surface as a confusing "No SOURCES given to target" or an empty
-# archive, so it is a hard error rather than a silent skip (see issue #7).
+# The file ships beside the CMake modules in both the source tree (cmake/dummy.cpp) and the
+# installed package (share/targets/cmake/dummy.cpp), so one path relative to this module's
+# own directory resolves in dev builds and for find_package consumers. The path is derived
+# from CMAKE_CURRENT_FUNCTION_LIST_DIR rather than a variable set when this file was included:
+# include_guard(GLOBAL) runs the file body in the first directory scope that includes Targets
+# and nowhere else, so a sibling directory that includes Targets for itself sees no such
+# variable.
+#
+# A missing file means a broken checkout or a package that failed to ship it, which would
+# otherwise surface as a confusing "No SOURCES given to target" or an empty archive, so it is
+# a hard error rather than a silent skip (see issue #7).
 function(_targets_dummy_source OUT_VAR)
-  set(dummy_file "${_TARGETS_ROOT_DIR}/dummy.cpp")
+  get_filename_component(module_root "${CMAKE_CURRENT_FUNCTION_LIST_DIR}" PATH)
+  set(dummy_file "${module_root}/dummy.cpp")
   if(NOT EXISTS "${dummy_file}")
     message(FATAL_ERROR
       "Targets: placeholder translation unit not found at '${dummy_file}'. The "
@@ -361,9 +368,9 @@ endfunction()
 # last debug-info flag on the command line to take effect.
 #
 # The module-scanning suppression below matters even to a rule that never asks for C++20: a
-# project-wide CMAKE_CXX_STANDARD of 20 or later reaches every target, and so does a
-# dependency on a header-only cpp_library, whose INTERFACE cxx_std_23 compile feature raises
-# the standard its consumers are compiled at above their own CXX_STANDARD.
+# project-wide CMAKE_CXX_STANDARD of 20 or later reaches every target, and so does any
+# dependency carrying an INTERFACE compile feature, which raises the standard its consumers
+# are compiled at above their own CXX_STANDARD.
 #
 # FATAL_ERROR if TARGET names no target, or names a type with no private compile step (an
 # INTERFACE or a custom target). An ALIAS and an IMPORTED target report the underlying type,
@@ -485,8 +492,8 @@ function(cpp_target)
     message(FATAL_ERROR "cpp_target: TARGET argument is required")
   endif()
 
-  # Validate the opt-in warning level up front (issue #23), for every target type, so a
-  # misspelled level fails fast with the same message on compiled and header-only targets.
+  # Validate the opt-in warning level before the target exists, so a misspelled level is
+  # reported against the call rather than at the point the level is applied.
   _targets_validate_warnings("cpp_target" "${args_WARNINGS}")
 
   # EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS are two mutually exclusive strategies for
@@ -601,9 +608,9 @@ function(cpp_target)
   # Create source groups for IDE organization. source_group(TREE ...) hard-errors on any
   # file outside the tree root, so out-of-root files (generated files in an out-of-source
   # build tree, or ../shared sources) are collected into a flat "Generated Files" group
-  # instead of aborting configuration (see issue #6). The dummy.cpp placeholder for
-  # file-less targets is injected later, at target creation, so that the header-only
-  # INTERFACE decision is made on the user's own files alone (see issue #7).
+  # instead of aborting configuration (see issue #6). Only the caller's own files are
+  # grouped here: the dummy.cpp placeholder is injected at target creation and gets its own
+  # "CMake Rules" group, so it never appears among the sources someone wrote.
   if(private_files)
     _targets_partition_files_by_root(
       "${args_SOURCE_DIR}" in_tree_sources out_of_tree_sources ${private_files})
@@ -656,28 +663,18 @@ function(cpp_target)
       set(library_type STATIC)
     endif()
 
-    # A library that exposes public files and has no private translation unit to compile is
-    # header-only, and must never receive the dummy.cpp placeholder, which would flip it to
-    # STATIC and change its usage-requirement semantics (see issue #7). A private header does
-    # not make a library compiled -- there is nothing to compile -- so a header-only library
-    # keeps its detail headers under PRIVATE without changing kind.
+    # Every library these rules create is a compiled one, so a consumer sees the same usage
+    # requirements however it reached the target. A library with nothing of its own to
+    # compile -- header-only, or a codegen target whose translation units are produced by a
+    # custom command -- still needs one real TU to archive, and gets the shipped placeholder.
+    # A private header supplies no translation unit, so it does not stand in for one.
     _targets_any_translation_unit(has_translation_unit ${private_files})
-    if(public_files AND NOT has_translation_unit)
-      add_library(${args_TARGET} INTERFACE)
-      set(_is_interface_library TRUE)
-    else()
-      # A library with no files at all (e.g. a codegen STATIC target whose translation units
-      # are produced by a custom command) still needs one real TU to archive; inject the
-      # shipped placeholder for it. Header-only libraries never reach this branch, so they
-      # never gain the dummy TU.
-      if(NOT private_files)
-        _targets_dummy_source(dummy_file)
-        list(APPEND private_files "${dummy_file}")
-        source_group("CMake Rules" FILES "${dummy_file}")
-      endif()
-      add_library(${args_TARGET} ${library_type} ${private_files} ${public_files})
-      set(_is_interface_library FALSE)
+    if(NOT has_translation_unit)
+      _targets_dummy_source(dummy_file)
+      list(APPEND private_files "${dummy_file}")
+      source_group("CMake Rules" FILES "${dummy_file}")
     endif()
+    add_library(${args_TARGET} ${library_type} ${private_files} ${public_files})
   elseif(args_TYPE STREQUAL "EXECUTABLE")
     if(args_STATIC OR args_SHARED)
       message(FATAL_ERROR "cpp_target: Executables cannot be marked STATIC or SHARED")
@@ -697,7 +694,6 @@ function(cpp_target)
       source_group("CMake Rules" FILES "${dummy_file}")
     endif()
     add_executable(${args_TARGET} ${private_files} ${public_files})
-    set(_is_interface_library FALSE)
   else()
     message(FATAL_ERROR "cpp_target: Invalid TYPE '${args_TYPE}'. Must be LIBRARY or EXECUTABLE")
   endif()
@@ -728,344 +724,227 @@ function(cpp_target)
     add_library(${alias} ALIAS ${args_TARGET})
   endif()
 
-  # Configure interface libraries differently
-  if(_is_interface_library)
-    # A header-only INTERFACE library has no private compile step and produces no built
-    # artifact, so several arguments have no meaning on it. Everything valid on an INTERFACE
-    # target is applied: the PUBLIC/INTERFACE usage-requirements below, plus FOLDER and user
-    # PROPERTIES (shared with compiled targets, further down). Everything that only applies
-    # to a compiled target is reported with a warning rather than being dropped silently
-    # (see issue #13). PRIVATE usage-requirements are still parsed here so the warning can
-    # name exactly what was ignored.
-    _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
-    _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
-    _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
-    # When the target is exported its public include dirs must be wrapped in BUILD/INSTALL
-    # interface generator expressions (a plain source path breaks install(EXPORT)); the
-    # wrapped directories are also the header-install sources. Otherwise the include dirs
-    # stay plain, preserving the non-install behavior exactly.
-    if(_do_install)
-      _targets_wrap_public_includes(
-        _public_include_entries _header_install_dirs "${args_HEADER_DIR}" ${PUBLIC_INCLUDES})
-      target_include_directories(${args_TARGET} INTERFACE ${_public_include_entries})
-    else()
-      target_include_directories(${args_TARGET} INTERFACE
+  # Add include directories
+  _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
+  _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
+  _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
+
+  # Generate an export header for a SHARED library so its public symbols are actually
+  # exported (see issue #21). On Windows/MSVC a SHARED library with no __declspec(dllexport)
+  # produces an empty import library and consumers fail to link; GenerateExportHeader writes
+  # a <target>_export.h defining a <TARGET>_EXPORT macro that expands to the right
+  # dllexport/dllimport (and, on GCC/Clang, visibility) attribute for the current build.
+  # CXX_VISIBILITY_PRESET hidden + VISIBILITY_INLINES_HIDDEN give non-Windows toolchains the
+  # same "nothing exported unless annotated" behavior MSVC has by default, so the macro is
+  # meaningful everywhere. The generated header's directory is added to the target's PUBLIC
+  # includes; when the target is also installed/exported it flows through the same
+  # BUILD/INSTALL_INTERFACE wrapping and header install as the hand-written headers below, so
+  # downstream consumers still find <target>_export.h.
+  if(args_EXPORT_HEADER AND args_TYPE STREQUAL "LIBRARY")
+    include(GenerateExportHeader)
+    set(_export_header_dir "${CMAKE_CURRENT_BINARY_DIR}/${args_TARGET}.export")
+    # Create the directory now so it exists at configure time: the install(DIRECTORY ...)
+    # rule for exported headers skips directories that are not present when it is generated.
+    file(MAKE_DIRECTORY "${_export_header_dir}")
+    string(TOLOWER "${args_TARGET}" _export_header_base)
+    generate_export_header(${args_TARGET}
+      EXPORT_FILE_NAME "${_export_header_dir}/${_export_header_base}_export.h")
+    set_target_properties(${args_TARGET} PROPERTIES
+      CXX_VISIBILITY_PRESET hidden
+      VISIBILITY_INLINES_HIDDEN ON)
+    list(APPEND PUBLIC_INCLUDES "${_export_header_dir}")
+  endif()
+
+  # Auto-export every symbol of a SHARED library on Windows as an alternative to annotating
+  # the public API with export macros (see issue #21). CMake fills the module-definition
+  # table from the object files' symbols; it is a no-op for STATIC libraries and on
+  # non-Windows toolchains.
+  if(args_WINDOWS_EXPORT_ALL_SYMBOLS AND args_TYPE STREQUAL "LIBRARY")
+    set_target_properties(${args_TARGET} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+  endif()
+
+  # When the target is exported its public include dirs must be wrapped in BUILD/INSTALL
+  # interface generator expressions (a plain source path breaks install(EXPORT)); the
+  # wrapped directories are also the header-install sources. Otherwise the include dirs
+  # stay plain, preserving the non-install behavior exactly.
+  if(_do_install)
+    _targets_wrap_public_includes(
+      _public_include_entries _header_install_dirs "${args_HEADER_DIR}" ${PUBLIC_INCLUDES})
+    target_include_directories(
+      ${args_TARGET}
+      PUBLIC
+        ${_public_include_entries}
+      PRIVATE
+        ${PRIVATE_INCLUDES}
+        "${args_SOURCE_DIR}"
+    )
+  else()
+    target_include_directories(
+      ${args_TARGET}
+      PUBLIC
         ${PUBLIC_INCLUDES}
         "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
-      )
-    endif()
+      PRIVATE
+        ${PRIVATE_INCLUDES}
+        "${args_SOURCE_DIR}"
+    )
+  endif()
 
-    _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
-    _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
-    _targets_parse_platforms(PRIVATE_DEFINITIONS ${PRIVATE_DEFINITIONS})
-    target_compile_definitions(${args_TARGET} INTERFACE ${PUBLIC_DEFINITIONS})
+  set_target_properties(
+    ${args_TARGET}
+    PROPERTIES
+      CXX_STANDARD ${args_CXX_STANDARD}
+      CXX_STANDARD_REQUIRED ON
+      CXX_EXTENSIONS OFF
+  )
 
-    _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})
-    _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
-    _targets_parse_platforms(PRIVATE_DEPENDENCIES ${PRIVATE_DEPENDENCIES})
-    import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")
-    target_link_libraries(${args_TARGET} INTERFACE ${PUBLIC_DEPENDENCIES})
+  # Add compiler definitions
+  _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
+  _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
+  _targets_parse_platforms(PRIVATE_DEFINITIONS ${PRIVATE_DEFINITIONS})
+  target_compile_definitions(
+    ${args_TARGET}
+    PUBLIC ${PUBLIC_DEFINITIONS}
+    PRIVATE ${PRIVATE_DEFINITIONS}
+  )
 
-    target_compile_features(${args_TARGET} INTERFACE cxx_std_${args_CXX_STANDARD})
+  # Per-target compile / link options (Bazel copts / linkopts, issue #27). Grouped under
+  # PUBLIC/PRIVATE and platform-filtered exactly like DEFINITIONS, then translated to the
+  # native target_compile_options / target_link_options. PUBLIC entries become usage
+  # requirements (also applied to consumers via INTERFACE_COMPILE_OPTIONS/LINK_OPTIONS);
+  # PRIVATE entries apply only to this target's own build. Each visibility is applied only
+  # when non-empty so an empty section never reaches the underlying command.
+  _targets_parse_access_specifier("cpp_target" COPTS ${args_COPTS})
+  _targets_parse_platforms(PUBLIC_COPTS ${PUBLIC_COPTS})
+  _targets_parse_platforms(PRIVATE_COPTS ${PRIVATE_COPTS})
+  if(PUBLIC_COPTS)
+    target_compile_options(${args_TARGET} PUBLIC ${PUBLIC_COPTS})
+  endif()
+  if(PRIVATE_COPTS)
+    target_compile_options(${args_TARGET} PRIVATE ${PRIVATE_COPTS})
+  endif()
 
-    # Warn about arguments that have no meaning on a header-only INTERFACE library instead
-    # of dropping them silently (see issue #13). PRIVATE usage-requirements need the private
-    # compile step this target does not have; VERSION/SOVERSION describe a built artifact it
-    # does not produce; PRECOMPILE_HEADERS and UNITY_BUILD are compilation settings with
-    # nothing to compile. They are collected and reported once, naming the target and each
-    # ignored argument.
-    set(ignored_args "")
-    if(PRIVATE_INCLUDES)
-      list(APPEND ignored_args "INCLUDES (PRIVATE)")
-    endif()
-    if(PRIVATE_DEFINITIONS)
-      list(APPEND ignored_args "DEFINITIONS (PRIVATE)")
-    endif()
-    if(PRIVATE_DEPENDENCIES)
-      list(APPEND ignored_args "DEPENDENCIES (PRIVATE)")
-    endif()
-    # COPTS/LINKOPTS are compile/link settings and DATA stages files next to a built
-    # artifact; a header-only INTERFACE library has neither a compile step nor an artifact,
-    # so all three are reported as ignored rather than applied (issue #27, consistent with #13).
-    if(args_COPTS)
-      list(APPEND ignored_args "COPTS")
-    endif()
-    if(args_LINKOPTS)
-      list(APPEND ignored_args "LINKOPTS")
-    endif()
-    if(args_DATA)
-      list(APPEND ignored_args "DATA")
-    endif()
-    if(args_VERSION)
-      list(APPEND ignored_args "VERSION")
-    endif()
+  _targets_parse_access_specifier("cpp_target" LINKOPTS ${args_LINKOPTS})
+  _targets_parse_platforms(PUBLIC_LINKOPTS ${PUBLIC_LINKOPTS})
+  _targets_parse_platforms(PRIVATE_LINKOPTS ${PRIVATE_LINKOPTS})
+  if(PUBLIC_LINKOPTS)
+    target_link_options(${args_TARGET} PUBLIC ${PUBLIC_LINKOPTS})
+  endif()
+  if(PRIVATE_LINKOPTS)
+    target_link_options(${args_TARGET} PRIVATE ${PRIVATE_LINKOPTS})
+  endif()
+
+  # Applied after this target's own COPTS: the Debug debug-info format injected here has to
+  # be the last debug-info flag on the command line.
+  _targets_apply_common_target_defaults(${args_TARGET})
+
+  # Add dependencies
+  _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})
+  _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
+  _targets_parse_platforms(PRIVATE_DEPENDENCIES ${PRIVATE_DEPENDENCIES})
+  import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")
+  import_dependencies(${args_TARGET} "${PRIVATE_DEPENDENCIES}")
+  target_link_libraries(
+    ${args_TARGET}
+    PUBLIC ${PUBLIC_DEPENDENCIES}
+    PRIVATE ${PRIVATE_DEPENDENCIES}
+  )
+
+  # Set version properties for libraries
+  if(args_TYPE STREQUAL "LIBRARY" AND args_VERSION)
+    set_target_properties(${args_TARGET} PROPERTIES VERSION ${args_VERSION})
     if(args_SOVERSION)
-      list(APPEND ignored_args "SOVERSION")
+      set_target_properties(${args_TARGET} PROPERTIES SOVERSION ${args_SOVERSION})
     endif()
-    if(args_PRECOMPILE_HEADERS)
-      list(APPEND ignored_args "PRECOMPILE_HEADERS")
-    endif()
-    if(args_UNITY_BUILD)
-      list(APPEND ignored_args "UNITY_BUILD")
-    endif()
-    if(args_EXPORT_HEADER)
-      list(APPEND ignored_args "EXPORT_HEADER")
-    endif()
-    if(args_WINDOWS_EXPORT_ALL_SYMBOLS)
-      list(APPEND ignored_args "WINDOWS_EXPORT_ALL_SYMBOLS")
-    endif()
-    # The opt-in toolchain hygiene knobs (issue #23) are compile/link settings with nothing
-    # to compile on a header-only INTERFACE library. WARNINGS is only reported when the
-    # caller passed the keyword (DEFINED), so an omitted level is never flagged.
-    if(DEFINED args_WARNINGS)
-      list(APPEND ignored_args "WARNINGS")
-    endif()
-    if(args_WERROR)
-      list(APPEND ignored_args "WERROR")
-    endif()
-    if(args_SANITIZERS)
-      list(APPEND ignored_args "SANITIZERS")
-    endif()
-    if(args_LTO)
-      list(APPEND ignored_args "LTO")
-    endif()
-    if(ignored_args)
-      string(REPLACE ";" ", " ignored_args "${ignored_args}")
-      message(WARNING
-        "cpp_target: '${args_TARGET}' is a header-only INTERFACE library (public files, no "
-        "private translation unit); the following argument(s) only apply to a compiled "
-        "target and were ignored: ${ignored_args}. An INTERFACE library has no private "
-        "compile step and produces no built artifact.")
-    endif()
-  else()
-    # Regular libraries and executables
+  endif()
 
-    # Add include directories
-    _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
-    _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
-    _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
-
-    # Generate an export header for a SHARED library so its public symbols are actually
-    # exported (see issue #21). On Windows/MSVC a SHARED library with no __declspec(dllexport)
-    # produces an empty import library and consumers fail to link; GenerateExportHeader writes
-    # a <target>_export.h defining a <TARGET>_EXPORT macro that expands to the right
-    # dllexport/dllimport (and, on GCC/Clang, visibility) attribute for the current build.
-    # CXX_VISIBILITY_PRESET hidden + VISIBILITY_INLINES_HIDDEN give non-Windows toolchains the
-    # same "nothing exported unless annotated" behavior MSVC has by default, so the macro is
-    # meaningful everywhere. The generated header's directory is added to the target's PUBLIC
-    # includes; when the target is also installed/exported it flows through the same
-    # BUILD/INSTALL_INTERFACE wrapping and header install as the hand-written headers below, so
-    # downstream consumers still find <target>_export.h.
-    if(args_EXPORT_HEADER AND args_TYPE STREQUAL "LIBRARY")
-      include(GenerateExportHeader)
-      set(_export_header_dir "${CMAKE_CURRENT_BINARY_DIR}/${args_TARGET}.export")
-      # Create the directory now so it exists at configure time: the install(DIRECTORY ...)
-      # rule for exported headers skips directories that are not present when it is generated.
-      file(MAKE_DIRECTORY "${_export_header_dir}")
-      string(TOLOWER "${args_TARGET}" _export_header_base)
-      generate_export_header(${args_TARGET}
-        EXPORT_FILE_NAME "${_export_header_dir}/${_export_header_base}_export.h")
-      set_target_properties(${args_TARGET} PROPERTIES
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON)
-      list(APPEND PUBLIC_INCLUDES "${_export_header_dir}")
-    endif()
-
-    # Auto-export every symbol of a SHARED library on Windows as an alternative to annotating
-    # the public API with export macros (see issue #21). CMake fills the module-definition
-    # table from the object files' symbols; it is a no-op for STATIC libraries and on
-    # non-Windows toolchains.
-    if(args_WINDOWS_EXPORT_ALL_SYMBOLS AND args_TYPE STREQUAL "LIBRARY")
-      set_target_properties(${args_TARGET} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    endif()
-
-    # When the target is exported its public include dirs must be wrapped in BUILD/INSTALL
-    # interface generator expressions (a plain source path breaks install(EXPORT)); the
-    # wrapped directories are also the header-install sources. Otherwise the include dirs
-    # stay plain, preserving the non-install behavior exactly.
-    if(_do_install)
-      _targets_wrap_public_includes(
-        _public_include_entries _header_install_dirs "${args_HEADER_DIR}" ${PUBLIC_INCLUDES})
-      target_include_directories(
-        ${args_TARGET}
-        PUBLIC
-          ${_public_include_entries}
-        PRIVATE
-          ${PRIVATE_INCLUDES}
-          "${args_SOURCE_DIR}"
-      )
-    else()
-      target_include_directories(
-        ${args_TARGET}
-        PUBLIC
-          ${PUBLIC_INCLUDES}
-          "$<BUILD_INTERFACE:${args_HEADER_DIR}>"
-        PRIVATE
-          ${PRIVATE_INCLUDES}
-          "${args_SOURCE_DIR}"
-      )
-    endif()
-
+  # Set working directory for executables (debugger)
+  if(args_TYPE STREQUAL "EXECUTABLE" AND args_WORKING_DIRECTORY)
     set_target_properties(
       ${args_TARGET}
       PROPERTIES
-        CXX_STANDARD ${args_CXX_STANDARD}
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
+        VS_DEBUGGER_WORKING_DIRECTORY "${args_WORKING_DIRECTORY}"
     )
-
-    # Add compiler definitions
-    _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
-    _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
-    _targets_parse_platforms(PRIVATE_DEFINITIONS ${PRIVATE_DEFINITIONS})
-    target_compile_definitions(
-      ${args_TARGET}
-      PUBLIC ${PUBLIC_DEFINITIONS}
-      PRIVATE ${PRIVATE_DEFINITIONS}
-    )
-
-    # Per-target compile / link options (Bazel copts / linkopts, issue #27). Grouped under
-    # PUBLIC/PRIVATE and platform-filtered exactly like DEFINITIONS, then translated to the
-    # native target_compile_options / target_link_options. PUBLIC entries become usage
-    # requirements (also applied to consumers via INTERFACE_COMPILE_OPTIONS/LINK_OPTIONS);
-    # PRIVATE entries apply only to this target's own build. Each visibility is applied only
-    # when non-empty so an empty section never reaches the underlying command.
-    _targets_parse_access_specifier("cpp_target" COPTS ${args_COPTS})
-    _targets_parse_platforms(PUBLIC_COPTS ${PUBLIC_COPTS})
-    _targets_parse_platforms(PRIVATE_COPTS ${PRIVATE_COPTS})
-    if(PUBLIC_COPTS)
-      target_compile_options(${args_TARGET} PUBLIC ${PUBLIC_COPTS})
-    endif()
-    if(PRIVATE_COPTS)
-      target_compile_options(${args_TARGET} PRIVATE ${PRIVATE_COPTS})
-    endif()
-
-    _targets_parse_access_specifier("cpp_target" LINKOPTS ${args_LINKOPTS})
-    _targets_parse_platforms(PUBLIC_LINKOPTS ${PUBLIC_LINKOPTS})
-    _targets_parse_platforms(PRIVATE_LINKOPTS ${PRIVATE_LINKOPTS})
-    if(PUBLIC_LINKOPTS)
-      target_link_options(${args_TARGET} PUBLIC ${PUBLIC_LINKOPTS})
-    endif()
-    if(PRIVATE_LINKOPTS)
-      target_link_options(${args_TARGET} PRIVATE ${PRIVATE_LINKOPTS})
-    endif()
-
-    # Applied after this target's own COPTS: the Debug debug-info format injected here has to
-    # be the last debug-info flag on the command line.
-    _targets_apply_common_target_defaults(${args_TARGET})
-
-    # Add dependencies
-    _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})
-    _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
-    _targets_parse_platforms(PRIVATE_DEPENDENCIES ${PRIVATE_DEPENDENCIES})
-    import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")
-    import_dependencies(${args_TARGET} "${PRIVATE_DEPENDENCIES}")
-    target_link_libraries(
-      ${args_TARGET}
-      PUBLIC ${PUBLIC_DEPENDENCIES}
-      PRIVATE ${PRIVATE_DEPENDENCIES}
-    )
-
-    # Set version properties for libraries
-    if(args_TYPE STREQUAL "LIBRARY" AND args_VERSION)
-      set_target_properties(${args_TARGET} PROPERTIES VERSION ${args_VERSION})
-      if(args_SOVERSION)
-        set_target_properties(${args_TARGET} PROPERTIES SOVERSION ${args_SOVERSION})
-      endif()
-    endif()
-
-    # Set working directory for executables (debugger)
-    if(args_TYPE STREQUAL "EXECUTABLE" AND args_WORKING_DIRECTORY)
-      set_target_properties(
-        ${args_TARGET}
-        PROPERTIES
-          VS_DEBUGGER_WORKING_DIRECTORY "${args_WORKING_DIRECTORY}"
-      )
-    endif()
-
-    # Set debugger command arguments for executables
-    if(args_TYPE STREQUAL "EXECUTABLE" AND args_COMMAND_ARGUMENTS)
-      set_target_properties(
-        ${args_TARGET}
-        PROPERTIES
-          VS_DEBUGGER_COMMAND_ARGUMENTS "${args_COMMAND_ARGUMENTS}"
-      )
-    endif()
-
-    # Stage runtime DLLs next to the executable so it launches from the build tree (see issue
-    # #21). On Windows the DLL of a SHARED dependency must sit beside the .exe (or be on PATH),
-    # or the process cannot start. $<TARGET_RUNTIME_DLLS> resolves the transitive set of
-    # dependency DLLs for us; the copy runs after every build so newly rebuilt DLLs are
-    # refreshed. It requires CMake >= 3.21 (this project's floor is 3.20), so it is version
-    # guarded and simply omitted on older CMake. The command name is chosen at generate time:
-    # with no runtime DLLs (e.g. only STATIC deps, or a non-DLL platform where the list is
-    # always empty) it degrades to `cmake -E true`, avoiding a `copy_if_different` invoked with
-    # no source files -- which is an error, not a no-op. COMMAND_EXPAND_LISTS splits the
-    # semicolon-separated DLL list into individual arguments.
-    if(args_TYPE STREQUAL "EXECUTABLE"
-       AND TARGETS_STAGE_RUNTIME_DLLS
-       AND NOT CMAKE_VERSION VERSION_LESS "3.21")
-      add_custom_command(TARGET ${args_TARGET} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E
-          "$<IF:$<BOOL:$<TARGET_RUNTIME_DLLS:${args_TARGET}>>,copy_if_different,true>"
-          "$<TARGET_RUNTIME_DLLS:${args_TARGET}>"
-          "$<TARGET_FILE_DIR:${args_TARGET}>"
-        COMMAND_EXPAND_LISTS
-        VERBATIM)
-    endif()
-
-    # Stage runtime DATA next to the built artifact (Bazel data, issue #27). The files a
-    # program or test reads at run time are copied into the target's output directory after
-    # every build, so it finds them via a relative path when launched from the build tree --
-    # mirroring the runtime-DLL staging above. DATA was already platform-filtered near the top;
-    # a header-only INTERFACE library never reaches this branch, so it warns instead (above).
-    if(args_DATA)
-      _targets_stage_data(${args_TARGET} "${args_SOURCE_DIR}" ${args_DATA})
-    endif()
-
-    # Configure precompiled headers
-    if(args_PRECOMPILE_HEADERS)
-      target_precompile_headers(${args_TARGET} PRIVATE ${args_PRECOMPILE_HEADERS})
-    endif()
-
-    # Configure unity builds
-    if(args_UNITY_BUILD)
-      set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD ON)
-      if(args_UNITY_BUILD_BATCH_SIZE)
-        set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD_BATCH_SIZE ${args_UNITY_BUILD_BATCH_SIZE})
-      else()
-        set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD_BATCH_SIZE 16)
-      endif()
-    endif()
-
-    # Apply the opt-in toolchain hygiene knobs last, so they layer on top of the target's
-    # own compile/link options (issue #23). Each is a no-op unless the caller opted in, so
-    # this changes nothing for existing targets. Only the keywords the caller actually gave
-    # are forwarded: passing an empty WARNINGS/SANITIZERS would trip CMP0174's dev warning
-    # in the common opt-out case, so they are appended only when present.
-    set(_hygiene_args TARGET ${args_TARGET})
-    if(NOT "${args_WARNINGS}" STREQUAL "")
-      list(APPEND _hygiene_args WARNINGS "${args_WARNINGS}")
-    endif()
-    if(args_SANITIZERS)
-      list(APPEND _hygiene_args SANITIZERS ${args_SANITIZERS})
-    endif()
-    if(args_WERROR)
-      list(APPEND _hygiene_args WERROR)
-    endif()
-    if(args_LTO)
-      list(APPEND _hygiene_args LTO)
-    endif()
-    _targets_apply_toolchain_hygiene(${_hygiene_args})
   endif()
 
-  # Set IDE folder. FOLDER is valid on every target type -- executables, compiled
-  # libraries, and INTERFACE (header-only) libraries (CMake >= 3.19) -- so it is applied
-  # here for all of them rather than only compiled targets, which used to silently drop it
-  # for header-only libraries (see issue #13). When the caller does not pass an explicit
-  # FOLDER, derive it from the enclosing project (see issue #8). Presence is tested with
-  # DEFINED rather than truthiness so an explicit but falsey-looking folder name (e.g. "0"
-  # or "OFF") is honored instead of falling through to the derived default (see issue #15).
+  # Set debugger command arguments for executables
+  if(args_TYPE STREQUAL "EXECUTABLE" AND args_COMMAND_ARGUMENTS)
+    set_target_properties(
+      ${args_TARGET}
+      PROPERTIES
+        VS_DEBUGGER_COMMAND_ARGUMENTS "${args_COMMAND_ARGUMENTS}"
+    )
+  endif()
+
+  # Stage runtime DLLs next to the executable so it launches from the build tree (see issue
+  # #21). On Windows the DLL of a SHARED dependency must sit beside the .exe (or be on PATH),
+  # or the process cannot start. $<TARGET_RUNTIME_DLLS> resolves the transitive set of
+  # dependency DLLs for us; the copy runs after every build so newly rebuilt DLLs are
+  # refreshed. It requires CMake >= 3.21 (this project's floor is 3.20), so it is version
+  # guarded and simply omitted on older CMake. The command name is chosen at generate time:
+  # with no runtime DLLs (e.g. only STATIC deps, or a non-DLL platform where the list is
+  # always empty) it degrades to `cmake -E true`, avoiding a `copy_if_different` invoked with
+  # no source files -- which is an error, not a no-op. COMMAND_EXPAND_LISTS splits the
+  # semicolon-separated DLL list into individual arguments.
+  if(args_TYPE STREQUAL "EXECUTABLE"
+     AND TARGETS_STAGE_RUNTIME_DLLS
+     AND NOT CMAKE_VERSION VERSION_LESS "3.21")
+    add_custom_command(TARGET ${args_TARGET} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E
+        "$<IF:$<BOOL:$<TARGET_RUNTIME_DLLS:${args_TARGET}>>,copy_if_different,true>"
+        "$<TARGET_RUNTIME_DLLS:${args_TARGET}>"
+        "$<TARGET_FILE_DIR:${args_TARGET}>"
+      COMMAND_EXPAND_LISTS
+      VERBATIM)
+  endif()
+
+  # Stage runtime DATA next to the built artifact (Bazel data, issue #27). The files a
+  # program or test reads at run time are copied into the target's output directory after
+  # every build, so it finds them via a relative path when launched from the build tree --
+  # mirroring the runtime-DLL staging above. DATA was already platform-filtered near the top.
+  if(args_DATA)
+    _targets_stage_data(${args_TARGET} "${args_SOURCE_DIR}" ${args_DATA})
+  endif()
+
+  # Configure precompiled headers
+  if(args_PRECOMPILE_HEADERS)
+    target_precompile_headers(${args_TARGET} PRIVATE ${args_PRECOMPILE_HEADERS})
+  endif()
+
+  # Configure unity builds
+  if(args_UNITY_BUILD)
+    set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD ON)
+    if(args_UNITY_BUILD_BATCH_SIZE)
+      set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD_BATCH_SIZE ${args_UNITY_BUILD_BATCH_SIZE})
+    else()
+      set_target_properties(${args_TARGET} PROPERTIES UNITY_BUILD_BATCH_SIZE 16)
+    endif()
+  endif()
+
+  # Apply the opt-in toolchain hygiene knobs last, so they layer on top of the target's
+  # own compile/link options (issue #23). Each is a no-op unless the caller opted in, so
+  # this changes nothing for existing targets. Only the keywords the caller actually gave
+  # are forwarded: passing an empty WARNINGS/SANITIZERS would trip CMP0174's dev warning
+  # in the common opt-out case, so they are appended only when present.
+  set(_hygiene_args TARGET ${args_TARGET})
+  if(NOT "${args_WARNINGS}" STREQUAL "")
+    list(APPEND _hygiene_args WARNINGS "${args_WARNINGS}")
+  endif()
+  if(args_SANITIZERS)
+    list(APPEND _hygiene_args SANITIZERS ${args_SANITIZERS})
+  endif()
+  if(args_WERROR)
+    list(APPEND _hygiene_args WERROR)
+  endif()
+  if(args_LTO)
+    list(APPEND _hygiene_args LTO)
+  endif()
+  _targets_apply_toolchain_hygiene(${_hygiene_args})
+
+  # Set IDE folder. When the caller does not pass an explicit FOLDER, derive it from the
+  # enclosing project (see issue #8). Presence is tested with DEFINED rather than truthiness
+  # so an explicit but falsey-looking folder name (e.g. "0" or "OFF") is honored instead of
+  # falling through to the derived default (see issue #15).
   if(DEFINED args_FOLDER)
     set_target_properties(${args_TARGET} PROPERTIES FOLDER "${args_FOLDER}")
   elseif(relative_path_from_root AND NOT relative_path_from_root MATCHES "^\\.\\.")
@@ -1075,8 +954,7 @@ function(cpp_target)
   endif()
 
   # Apply additional user-supplied properties last, so they can override anything set
-  # above. Valid on INTERFACE targets too (CMake >= 3.19), so this is shared across every
-  # target type; the header-only path used to drop it silently (see issue #13).
+  # above.
   if(args_PROPERTIES)
     set_target_properties(${args_TARGET} PROPERTIES ${args_PROPERTIES})
   endif()

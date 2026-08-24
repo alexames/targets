@@ -23,9 +23,9 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../cmake")
 include(Targets)
 
-# A real translation unit in the build tree so a compiled (non-INTERFACE) library is
-# created; SOURCE_DIR points there to keep source_group(TREE) happy. It is never compiled
-# for the LANGUAGES NONE scenarios (they halt before generation).
+# A real translation unit in the build tree; SOURCE_DIR points there to keep
+# source_group(TREE) happy. It is never compiled for the LANGUAGES NONE scenarios (they halt
+# before generation).
 set(_src "${CMAKE_CURRENT_BINARY_DIR}/hygiene.cpp")
 file(WRITE "${_src}" "int hygiene_symbol() { return 0; }\n")
 
@@ -134,18 +134,26 @@ elseif(SCENARIO STREQUAL "lto")
   endif()
   message(FATAL_ERROR "LTO_OK: interprocedural optimization gated on check_ipo_supported")
 
-elseif(SCENARIO STREQUAL "interface_warns")
-  # The knobs are compile/link settings; on a header-only INTERFACE library they must be
-  # reported as ignored (consistent with issue #13), not applied.
+elseif(SCENARIO STREQUAL "header_only")
+  # A header-only library compiles the placeholder translation unit, so the knobs describe a
+  # compile step it really has and must land on it like they do on any other library.
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/hygiene.h" "#pragma once\nint hdr_only();\n")
   cpp_library(TARGET HygieneHeaderOnly
     HEADERS "${CMAKE_CURRENT_BINARY_DIR}/hygiene.h"
     HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}"
     WARNINGS strict
-    WERROR
-    SANITIZERS address
-    LTO)
-  message(FATAL_ERROR "interface_warns: expected an ignored-argument warning, not this")
+    WERROR)
+  _get_opts(_copts HygieneHeaderOnly COMPILE_OPTIONS)
+  foreach(_expected
+      "$<$<CXX_COMPILER_ID:MSVC>:/W4>"
+      "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>"
+      "$<$<CXX_COMPILER_ID:MSVC>:/WX>"
+      "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Werror>")
+    if(NOT "${_expected}" IN_LIST _copts)
+      message(FATAL_ERROR "header_only: expected '${_expected}' in COMPILE_OPTIONS: ${_copts}")
+    endif()
+  endforeach()
+  message(FATAL_ERROR "HYGIENE_HEADER_ONLY_OK: the knobs reach a header-only library")
 
 else()
   message(FATAL_ERROR "test harness: unknown or unset SCENARIO '${SCENARIO}'")

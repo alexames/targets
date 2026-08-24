@@ -143,20 +143,14 @@ function(_targets_install_target)
     set(export_args EXPORT ${install_EXPORT})
   endif()
 
-  # Install the target's artifacts. An INTERFACE (header-only) library has no artifact, so
-  # it only needs the export record; every other target type installs its archive/library/
-  # runtime into the standard GNUInstallDirs locations.
-  get_target_property(target_type ${install_TARGET} TYPE)
-  if(target_type STREQUAL "INTERFACE_LIBRARY")
-    if(install_EXPORT)
-      install(TARGETS ${install_TARGET} EXPORT ${install_EXPORT})
-    endif()
-  else()
-    install(TARGETS ${install_TARGET} ${export_args}
-      ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-      LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-      RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
-  endif()
+  # Install the target's artifacts into the standard GNUInstallDirs locations. Every target
+  # these rules create has one: a header-only library archives the shipped placeholder
+  # translation unit, so a downstream find_package resolves an import location like any
+  # other.
+  install(TARGETS ${install_TARGET} ${export_args}
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
   # Install the public headers: the contents of each public include directory that exists.
   # A trailing slash on the source installs the directory contents (preserving any nested

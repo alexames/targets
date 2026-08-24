@@ -217,15 +217,24 @@ if(CMAKE_GENERATOR MATCHES "Visual Studio")
   )
 endif()
 
-# dummy.cpp fallback and header-only INTERFACE detection (regression test for issue #7).
-# A library with HEADERS but no SOURCES must be an INTERFACE library with no dummy TU;
-# a library with neither SOURCES nor HEADERS must be a STATIC library carrying the shipped
-# dummy.cpp placeholder TU. A FATAL_ERROR in any assertion fails the test.
+# The placeholder translation unit cpp_target() injects (issue #7). A library with nothing
+# of its own to compile -- HEADERS but no SOURCES, or neither -- must be a STATIC library
+# carrying the shipped dummy.cpp. A FATAL_ERROR in any assertion fails the test.
 add_test(
   NAME cpp_target_dummy_source
   COMMAND "${CMAKE_COMMAND}"
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_dummy_source"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_dummy_source"
+)
+
+# The placeholder must resolve from any directory scope. cpp_target.cmake runs its body only
+# in the first scope that includes Targets, so a sibling directory that includes Targets for
+# itself -- what every example does -- sees none of the variables that body set.
+add_test(
+  NAME cpp_target_dummy_source_sibling_scope
+  COMMAND "${CMAKE_COMMAND}"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_dummy_source_sibling_scope"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_dummy_source_sibling_scope"
 )
 
 # MSVC compile/link flag scoping (regression test for issue #5). /ZI must never be
@@ -301,43 +310,27 @@ add_test(
 set_tests_properties(cpp_test_install_gtest_hygiene PROPERTIES
   PASS_REGULAR_EXPRESSION "INSTALL_GTEST_OFF_OK")
 
-# Header-only INTERFACE semantics (regression tests for issue #13). The INTERFACE
-# (header-only) branch used to apply only PUBLIC usage-requirements and silently drop
-# FOLDER, PROPERTIES, PRIVATE usage-requirements, VERSION/SOVERSION, PRECOMPILE_HEADERS,
-# and UNITY_BUILD. It must now apply what is valid on an INTERFACE target (PUBLIC
-# usage-requirements, FOLDER, PROPERTIES) and warn about anything that only applies to a
-# compiled target. The "apply" scenario configures cleanly (any FATAL_ERROR assertion
-# fails the test); the "ignored" scenario passes iff the warning is emitted.
+# What cpp_target applies to a header-only library. It is a compiled target like any other,
+# so the settings that describe a compile step or a built artifact all mean something on it:
+# "apply" covers the ones that reach the target itself, "private_applies" the PRIVATE
+# usage-requirements that reach its own compile step without leaking to consumers. Neither
+# sets PASS_REGULAR_EXPRESSION, so the exit code decides: any FATAL_ERROR assertion in the
+# scenario fails the test.
 add_test(
-  NAME cpp_target_interface_apply
+  NAME cpp_target_header_only_apply
   COMMAND "${CMAKE_COMMAND}"
     -DSCENARIO=apply
-    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_interface_semantics"
-    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_interface_semantics_apply"
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_header_only_semantics"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_header_only_semantics_apply"
 )
-# No PASS_REGULAR_EXPRESSION, so the exit code decides: any FATAL_ERROR assertion in the
-# scenario fails the test. FAIL_REGULAR_EXPRESSION additionally fails it if the ignored-
-# argument warning is emitted for the all-valid inputs (the warning must not fire here).
-set_tests_properties(cpp_target_interface_apply PROPERTIES
-  FAIL_REGULAR_EXPRESSION "only apply to a compiled target and were ignored")
 
 add_test(
-  NAME cpp_target_interface_ignored_warns
+  NAME cpp_target_header_only_private_applies
   COMMAND "${CMAKE_COMMAND}"
-    -DSCENARIO=ignored
-    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_interface_semantics"
-    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_interface_semantics_ignored"
+    -DSCENARIO=private_applies
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_header_only_semantics"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_header_only_semantics_private"
 )
-# PASS requires the warning to be emitted; FAIL_REGULAR_EXPRESSION makes the scenario's
-# leak assertion effective -- with PASS_REGULAR_EXPRESSION set, CTest ignores the exit
-# code, so the FATAL_ERROR raised if the ignored PRIVATE dependency leaks onto the
-# INTERFACE target is only honored via this FAIL regex (FAIL takes precedence over PASS).
-# CMake word-wraps the warning across console lines, so match the key phrase with
-# whitespace-tolerant separators (as cpp_target_hygiene_interface_warns does) rather than a
-# fixed-space string that a line break could split.
-set_tests_properties(cpp_target_interface_ignored_warns PROPERTIES
-  PASS_REGULAR_EXPRESSION "only[ \t\r\n]+apply[ \t\r\n]+to[ \t\r\n]+a[ \t\r\n]+compiled[ \t\r\n]+target[ \t\r\n]+and[ \t\r\n]+were[ \t\r\n]+ignored"
-  FAIL_REGULAR_EXPRESSION "PRIVATE[ \t\r\n]+dependency[ \t\r\n]+must[ \t\r\n]+not[ \t\r\n]+be[ \t\r\n]+applied")
 
 # Library linkage selection (regression tests for issue #14). STATIC and SHARED are
 # mutually exclusive; passing both used to silently build SHARED instead of erroring
@@ -375,22 +368,49 @@ add_test(
 set_tests_properties(cpp_library_default_type PROPERTIES
   PASS_REGULAR_EXPRESSION "DEFAULT_OK")
 
-# Compiled vs header-only under the PUBLIC/PRIVATE spelling (issue #66). The decision is
-# made on whether any PRIVATE entry is a translation unit, so these two calls differ in one
-# private file and must land on different target kinds. Getting it wrong in either direction
-# silently changes what linking to the target means, so both are pinned. Each scenario names
-# itself in its assertions ("grouped_interface: ...") but not in its halt, so the FAIL
-# expression tells a tripped assertion from the halt the PASS expression looks for.
+# A translation unit under SOURCES PUBLIC. PUBLIC says where an entry resolves and that
+# consumers see it; it never meant the file is left out of the build.
 add_test(
-  NAME cpp_library_grouped_interface_type
+  NAME cpp_library_public_translation_unit
   COMMAND "${CMAKE_COMMAND}"
-    -DSCENARIO=grouped_interface
+    -DSCENARIO=public_translation_unit
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
-    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_grouped_interface"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_public_translation_unit"
 )
-set_tests_properties(cpp_library_grouped_interface_type PROPERTIES
-  PASS_REGULAR_EXPRESSION "GROUPED_INTERFACE_OK"
-  FAIL_REGULAR_EXPRESSION "grouped_interface:")
+set_tests_properties(cpp_library_public_translation_unit PROPERTIES
+  PASS_REGULAR_EXPRESSION "PUBLIC_TU_OK"
+  FAIL_REGULAR_EXPRESSION "public_translation_unit:")
+
+# SHARED on a header-only library. Nothing about having no translation unit of its own makes
+# a library's linkage contradictory, so the rule does not second-guess the request: it builds
+# the placeholder TU into a shared library. What that library exports is the caller's problem
+# (on Windows, a library exporting nothing produces no import library for consumers to link).
+add_test(
+  NAME cpp_library_shared_header_only_type
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=shared_header_only
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_shared_header_only"
+)
+set_tests_properties(cpp_library_shared_header_only_type PROPERTIES
+  PASS_REGULAR_EXPRESSION "SHARED_HEADER_ONLY_OK"
+  FAIL_REGULAR_EXPRESSION "shared_header_only:")
+
+# Whether a library is given the placeholder TU, under the PUBLIC/PRIVATE spelling (issue
+# #66). The decision is made on whether any PRIVATE entry is a translation unit, so these two
+# calls differ in one private file: one is given the placeholder and one must not be. Each
+# scenario names itself in its assertions ("grouped_header_only: ...") but not in its halt, so
+# the FAIL expression tells a tripped assertion from the halt the PASS expression looks for.
+add_test(
+  NAME cpp_library_grouped_header_only_type
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=grouped_header_only
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_grouped_header_only"
+)
+set_tests_properties(cpp_library_grouped_header_only_type PROPERTIES
+  PASS_REGULAR_EXPRESSION "GROUPED_HEADER_ONLY_OK"
+  FAIL_REGULAR_EXPRESSION "grouped_header_only:")
 
 add_test(
   NAME cpp_library_grouped_static_type
@@ -583,18 +603,18 @@ add_test(
 set_tests_properties(cpp_target_hygiene_lto PROPERTIES
   PASS_REGULAR_EXPRESSION "LTO_OK")
 
+# A header-only library compiles the placeholder TU, so the hygiene knobs describe a compile
+# step it really has and must land on it.
 add_test(
-  NAME cpp_target_hygiene_interface_warns
+  NAME cpp_target_hygiene_header_only
   COMMAND "${CMAKE_COMMAND}"
-    -DSCENARIO=interface_warns
+    -DSCENARIO=header_only
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_hygiene"
-    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_interface_warns"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_hygiene_header_only"
 )
-# The warning message is word-wrapped by CMake, so match the key phrase with whitespace-
-# tolerant separators (as the export-conflict tests above do) rather than a fixed-space
-# string that a line break could split.
-set_tests_properties(cpp_target_hygiene_interface_warns PROPERTIES
-  PASS_REGULAR_EXPRESSION "compiled[ \t\r\n]+target[ \t\r\n]+and[ \t\r\n]+were[ \t\r\n]+ignored")
+set_tests_properties(cpp_target_hygiene_header_only PROPERTIES
+  PASS_REGULAR_EXPRESSION "HYGIENE_HEADER_ONLY_OK"
+  FAIL_REGULAR_EXPRESSION "header_only:")
 
 # protobuf_cpp_library / grpc_cpp_library codegen rules (issue #26). These configure-mode
 # scenarios run with NO protoc or gRPC plugin installed (CI has neither), so they never
@@ -693,10 +713,10 @@ add_test(
 # Per-target COPTS / LINKOPTS and the DATA attribute (issue #27). COPTS/LINKOPTS carry
 # PUBLIC/PRIVATE visibility and the same platform buckets as DEFINITIONS and must land in
 # COMPILE_OPTIONS/LINK_OPTIONS (PUBLIC also in the INTERFACE_* variants) with platform
-# filtering; DATA must configure its POST_BUILD staging cleanly for a file and a directory and
-# be reported as ignored on a header-only INTERFACE library. Each positive scenario asserts the
-# result and halts before generation with a sentinel matched by PASS_REGULAR_EXPRESSION; the
-# runtime DATA staging is proven end-to-end by the examples/data_files example in CI.
+# filtering; DATA must configure its POST_BUILD staging cleanly for a file and a directory.
+# All three reach a header-only library too. Each positive scenario asserts the result and
+# halts before generation with a sentinel matched by PASS_REGULAR_EXPRESSION; the runtime DATA
+# staging is proven end-to-end by the examples/data_files example in CI.
 add_test(
   NAME cpp_target_copts
   COMMAND "${CMAKE_COMMAND}"
@@ -728,16 +748,15 @@ set_tests_properties(cpp_target_data_stage PROPERTIES
   PASS_REGULAR_EXPRESSION "DATA_STAGE_OK")
 
 add_test(
-  NAME cpp_target_options_interface_warns
+  NAME cpp_target_options_header_only
   COMMAND "${CMAKE_COMMAND}"
-    -DSCENARIO=interface_warns
+    -DSCENARIO=header_only
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_options"
-    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_options_interface_warns"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_options_header_only"
 )
-# CMake word-wraps the warning across console lines, so match the key phrase with whitespace-
-# tolerant separators (as the hygiene/interface tests above do).
-set_tests_properties(cpp_target_options_interface_warns PROPERTIES
-  PASS_REGULAR_EXPRESSION "compiled[ \t\r\n]+target[ \t\r\n]+and[ \t\r\n]+were[ \t\r\n]+ignored")
+set_tests_properties(cpp_target_options_header_only PROPERTIES
+  PASS_REGULAR_EXPRESSION "OPTS_HEADER_ONLY_OK"
+  FAIL_REGULAR_EXPRESSION "header_only:")
 
 # cpp_test() Bazel-parity test attributes: SIZE / TIMEOUT / LABELS / ARGS / DATA (issue #27).
 # These are applied to the CTest tests gtest_discover_tests registers; since discovery is a
@@ -1250,12 +1269,12 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
       -B "${CMAKE_CURRENT_BINARY_DIR}/integration/codegen_target_defaults_interface_propagation"
   )
 
-  # What the interface_propagation scenario cannot check for itself: that a header-only
-  # cpp_library dependency really does raise a codegen target to C++20 or later. The raise
-  # happens at generate time and leaves CXX_STANDARD reading whatever the rule set, so this
-  # one compiles a probe and lets the compiler report the standard it was given. Without it,
-  # interface_propagation asserts scanning is off on a target nothing proved was in scanning
-  # range.
+  # What the interface_propagation scenario cannot check for itself: that a dependency
+  # carrying an INTERFACE compile feature really does raise a codegen target to C++20 or
+  # later. The raise happens at generate time and leaves CXX_STANDARD reading whatever the
+  # rule set, so this one compiles a probe and lets the compiler report the standard it was
+  # given. Without it, interface_propagation asserts scanning is off on a target nothing
+  # proved was in scanning range.
   add_test(
     NAME codegen_target_defaults_effective_standard
     COMMAND "${CMAKE_COMMAND}"

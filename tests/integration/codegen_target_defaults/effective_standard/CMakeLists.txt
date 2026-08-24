@@ -26,13 +26,10 @@ if(DEFINED CMAKE_CXX_STANDARD)
     "be the only thing raising the standard, which is the whole subject here")
 endif()
 
-set(_header "${CMAKE_CURRENT_BINARY_DIR}/headeronly.h")
-file(WRITE "${_header}" "#pragma once\ninline int header_only_symbol() { return 0; }\n")
-cpp_library(
-  TARGET HeaderOnlyLib
-  HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}"
-  HEADERS "${_header}"
-)
+# Declared by hand rather than by a cpp_* rule: no rule here produces a target that
+# propagates a compile feature, and the subject is what an arbitrary dependency does.
+add_library(StandardCarrier INTERFACE)
+target_compile_features(StandardCarrier INTERFACE cxx_std_23)
 
 set(_payload "${CMAKE_CURRENT_BINARY_DIR}/payload.bin")
 file(WRITE "${_payload}" "codegen-effective-standard-payload")
@@ -42,7 +39,7 @@ embed_binary(
   NAMESPACE test::embedded
 )
 
-target_link_libraries(EmbeddedLib PUBLIC HeaderOnlyLib)
+target_link_libraries(EmbeddedLib PUBLIC StandardCarrier)
 
 # The probe fails to compile unless the dependency raised this target to C++20 or later.
 # MSVC reports the standard it was given in _MSVC_LANG; __cplusplus stays at 199711L there
@@ -55,7 +52,7 @@ file(WRITE "${_probe}" "\
 #  define TARGETS_TEST_LANG __cplusplus
 #endif
 static_assert(TARGETS_TEST_LANG >= 202002L,
-    \"a header-only cpp_library dependency did not raise this target to C++20 or later, \"
+    \"the dependency did not raise this target to C++20 or later, \"
     \"so it is not in module-scanning range and the scanning assertions prove nothing\");
 int standard_probe_symbol() { return 0; }
 ")
