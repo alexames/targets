@@ -58,6 +58,9 @@ cpp_binary(
 # `cmake --build` compiles the installed dummy.cpp end-to-end.
 cpp_library(
   TARGET GeneratedPlaceholder
+  DEFINITIONS
+    PUBLIC
+      GENERATED_PLACEHOLDER_AVAILABLE=1
 )
 
 get_target_property(_placeholder_type GeneratedPlaceholder TYPE)
