@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A `cmake-floor` CI job configures and builds the examples with the exact CMake version the
-  project declares as its minimum. Every other job installs the newest release, so the floor
-  was previously an unchecked claim; a rule reaching above it without a version guard now
-  fails a job ([#83]).
+  project declares as its minimum. Every other job installs the newest release, so nothing
+  tested the floor; whatever the examples reach that needs more than it now fails a job
+  ([#83]).
 - `SOURCES` now accepts `PUBLIC` and `PRIVATE` groups, the grammar every other list argument
   already uses. `PUBLIC` entries are the target's interface and resolve against `HEADER_DIR`;
   `PRIVATE` entries are its implementation and resolve against `SOURCE_DIR`; platform

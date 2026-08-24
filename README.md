@@ -116,6 +116,7 @@ cpp_library(
         PRIVATE
             src/Widget.cpp              # the implementation, resolved against SOURCE_DIR
             src/detail/LayoutCache.hpp  # a private header, beside the .cpp it serves
+    HEADER_DIR include
     INCLUDES PUBLIC include/
     DEPENDENCIES
         PUBLIC  fmt::fmt
@@ -134,13 +135,18 @@ cpp_test(
 That is the whole declaration. `Widgets` also gets the alias `MyProject::Widgets`, an IDE
 folder, and source groups; `WidgetTest` is linked against Google Test — acquired on the first
 `cpp_test()` call, never at include time — and registered with CTest, with a 60-second
-timeout from its size and a `ctest -L unit` label.
+timeout from its size and a `ctest -L unit` label. Registration needs testing enabled at your
+top level: `cpp_test()` never calls `enable_testing()` itself, because that command is
+directory-scoped and calling it from a module would drop tests declared in sibling scopes.
 
-The grammar is uniform and checked. On a library, every entry of `SOURCES`, `INCLUDES`,
-`DEFINITIONS`, `DEPENDENCIES`, `COPTS`, and `LINKOPTS` must sit under `PUBLIC` or `PRIVATE`;
-an entry before the first keyword is a configure error rather than a value silently dropped.
-On `cpp_binary` and `cpp_test`, `PRIVATE` is implied and `PUBLIC` is rejected, because
-nothing links a leaf target and a public entry there would reach no one. A library that
+The grammar is uniform and checked. On a library, every entry of `INCLUDES`, `DEFINITIONS`,
+`DEPENDENCIES`, `COPTS`, and `LINKOPTS` must sit under `PUBLIC` or `PRIVATE`; an entry before
+the first keyword is a configure error rather than a value silently dropped. `SOURCES` takes
+the same groups, and also still accepts a deprecated bare list that is entirely private —
+what it will not accept is a list that opens bare and names a keyword partway through, where
+the entries ahead of the keyword have no reading that keeps them. On `cpp_binary` and
+`cpp_test`, `PRIVATE` is implied and `PUBLIC` is rejected, because nothing links a leaf
+target and a public entry there would reach no one. A library that
 offers its consumers nothing at all — no public file, no dependency, no public usage
 requirement, and nothing of its own to compile — is a configure error too. Header-only
 libraries are compiled STATIC targets built from a shipped placeholder translation unit, not
@@ -167,7 +173,9 @@ It also refuses to pretend. Only the Makefile generators and Ninja run a compile
 Visual Studio and Xcode accept the variable and drop it, finishing the build with every cache
 statistic at zero. Under those generators the rule wires nothing and says so — a cache that
 reports success while caching nothing is worse than no cache at all. A cache binary that is
-not on `PATH`, and a `BASE_DIR` the sources do not sit under, are reported the same way.
+not on `PATH` is reported the same way, and wires nothing either. A `BASE_DIR` the sources do
+not sit under is warned about but still wired: caching works, only sharing across checkouts
+is lost.
 
 ### Code generation as an ordinary target
 
@@ -210,7 +218,8 @@ lean on is private (`_targets_*`) with no stable contract.
 ---
 
 Everything else — inline
-[platform buckets](docs/API.md#platform-conditional-entries) in any list argument,
+[platform buckets](docs/API.md#platform-conditional-entries) in the file, include,
+definition, dependency, option and data lists,
 [namespace aliases and subdirectory auto-import](docs/API.md#automatic-namespace-aliasing),
 [`INSTALL` / `EXPORT`](docs/API.md#installing--exporting-libraries) for downstream
 `find_package`, [symbol export and DLL staging](docs/API.md#shared-libraries-on-windows) for
@@ -225,13 +234,15 @@ coexist with), runtime [`DATA`](docs/API.md#cpp_library) staging, and the
 C++ modules are the one thing the rules deliberately switch off: every target they create
 gets [`CXX_SCAN_FOR_MODULES OFF`](docs/API.md#c-modules), because there is no way to declare
 a module interface unit through them, so the per-translation-unit scan CMake would otherwise
-run for C++20 and later can never find one. `-DTARGETS_SCAN_FOR_MODULES=ON` restores CMake's
-default.
+run for C++20 and later can never find one. They leave the property alone if you set
+`CMAKE_CXX_SCAN_FOR_MODULES` yourself, and `-DTARGETS_SCAN_FOR_MODULES=ON` restores CMake's
+default everywhere.
 
 ## Requirements
 
-- **CMake 3.20 or later.** A CI job configures at exactly that version, so the number stays
-  honest. Every feature the rules use above the floor is version-guarded and degrades:
+- **CMake 3.20 or later.** A CI job configures and builds the examples at exactly that
+  version, so the floor is tested rather than asserted. Every feature the rules use above it
+  is version-guarded and degrades:
   `$<TARGET_RUNTIME_DLLS>` DLL staging needs 3.21, the `GLOBAL` promotion of an imported
   Google Test needs 3.24, `MSVC_DEBUG_INFORMATION_FORMAT` under `CMP0141 NEW` needs 3.25
   (below it a `/Z7` is appended to the flags instead), and `EXCLUDE_FROM_ALL` on a fetched

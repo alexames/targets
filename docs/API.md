@@ -151,6 +151,7 @@ cpp_library(
             src/calculator.cpp
             src/geometry.cpp
             src/detail/lookup_tables.h
+    HEADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
     INCLUDES
         PUBLIC
             include/

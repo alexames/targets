@@ -57,11 +57,10 @@ include("${_TARGETS_MODULE_DIR}/toolchain_hygiene.cmake")
 # <prefix>_UNPARSED_ARGUMENTS, MISSING is its <prefix>_KEYWORDS_MISSING_VALUES, and
 # ARGN carries the rule's full set of valid keywords (printed as a hint). Values are
 # passed positionally rather than under keywords so a stray token cannot collide with
-# this helper's own argument names. An unrecognized argument is a hard error, because it
-# is almost always a misspelled keyword: `SOURCE main.cpp` leaves the target with no
-# sources, and a misspelling after a multi-value keyword is absorbed into that keyword's
-# list, where it becomes a file name CMake then cannot find. A keyword given no values is
-# only a warning.
+# this helper's own argument names. An unrecognized argument is a hard error, because a
+# misspelled keyword takes its values down with it: `SOURCE main.cpp` reaches here as two
+# unassigned tokens and would otherwise leave the target with no sources at all. A keyword
+# given no values is only a warning.
 function(_targets_check_args RULE UNPARSED MISSING)
   if(NOT "${UNPARSED}" STREQUAL "")
     string(REPLACE ";" ", " _unparsed "${UNPARSED}")
@@ -512,9 +511,9 @@ function(_targets_apply_common_target_defaults TARGET)
     set_target_properties(${TARGET} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
   endif()
 
-  # MSVC compiler and linker flags. Each is scoped to the configurations and architectures where
-  # it is valid: /ZI de-optimizes Release and is invalid on ARM64, and /SAFESEH:NO is meaningful
-  # only on the x86 linker.
+  # MSVC compiler and linker flags. Each is scoped to the configurations and architectures
+  # where it is valid: /ZI de-optimizes Release and applies only to x86/x64, and /SAFESEH:NO
+  # is meaningful only on the x86 linker.
   if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     # UTF-8 source and execution character sets: safe in every configuration and
     # on every architecture.
@@ -579,8 +578,9 @@ endfunction()
 # given for an executable; EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS are combined, or
 # either is given for an executable; grouped SOURCES is combined with HEADERS; a library
 # offers its consumers nothing; a DEPENDENCIES label rooted at this project names a
-# subdirectory that does not declare it (see import_dependencies); or the placeholder
-# translation unit is missing from the package.
+# subdirectory that does not declare it (see import_dependencies); a platform-filtered list
+# ends with a LITERAL escape and nothing to escape; or the placeholder translation unit is
+# missing from the package.
 function(cpp_target)
   set(options
     STATIC

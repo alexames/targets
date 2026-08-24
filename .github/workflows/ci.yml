@@ -172,12 +172,15 @@ jobs:
             *) echo "expected CMake 3.20.x, got: $version"; exit 1 ;;
           esac
 
-      # The examples exercise every core rule, the install/export and SHARED paths, the DATA
-      # staging, embed_binary, and the hygiene knobs. A rule reaching for something above the
-      # floor without a version guard fails the configure here; one whose guard degrades to a
-      # diagnostic is caught by the warning check. The toolchain_hygiene example uses the
-      # deprecated file-list spelling on purpose, so its CMake Deprecation Warning is expected
-      # and only a plain CMake Warning fails the job.
+      # The examples cover cpp_library and cpp_binary, the install/export and SHARED paths,
+      # DATA staging, embed_binary, and the hygiene knobs. They do not call cpp_test, and the
+      # codegen rules find no FlatBuffers or Protocol Buffers on a bare runner, so for those
+      # three this proves only that including them at the floor is clean -- their own version
+      # guards run in the test-suite job instead. Whatever the examples do reach that needs
+      # more than the floor fails the configure here; a guard that degrades to a diagnostic is
+      # caught by the warning check. The toolchain_hygiene example uses the deprecated
+      # file-list spelling on purpose, so its CMake Deprecation Warning is expected and only a
+      # plain CMake Warning fails the job.
       - name: Configure examples at the floor
         shell: bash
         run: |

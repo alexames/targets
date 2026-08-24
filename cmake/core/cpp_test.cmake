@@ -215,7 +215,7 @@ function(cpp_test)
   endforeach()
 
   # Reconstruct the argument list to forward to cpp_target: every cpp_target keyword the caller
-  # gave (the four test-only attributes are consumed here, never forwarded, so cpp_target's
+  # gave (the five test-only arguments are consumed here, never forwarded, so cpp_target's
   # unknown-keyword rejection does not trip on them), plus anything cpp_target could not
   # classify so its own validation still rejects misspelled/pre-keyword tokens.
   # cpp_target parses by keyword, so the reconstructed order is irrelevant.
@@ -255,9 +255,9 @@ function(cpp_test)
 
   # Default the IDE folder to "Tests" unless the caller set one explicitly. Detect presence
   # with DEFINED rather than truthiness so a falsey-but-valid folder name (e.g. a folder
-  # literally named "0" or "OFF") is honored instead of silently triggering the default
-  # cpp_target applies the FOLDER value; putting the default ahead of the
-  # forwarded args lets an explicit user FOLDER, if present there, win over it.
+  # literally named "0" or "OFF") is honored instead of silently triggering the default.
+  # cpp_target applies the FOLDER value, and putting the default ahead of the forwarded args
+  # lets an explicit user FOLDER, if present there, win over it.
   set(_folder_default "")
   if(NOT DEFINED _t_FOLDER)
     set(_folder_default FOLDER "Tests")

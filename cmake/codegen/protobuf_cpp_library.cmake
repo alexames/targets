@@ -40,8 +40,10 @@ define_property(TARGET PROPERTY PROTOBUF_IMPORT_DIRS
 # a dependency's INTERFACE cxx_std_* compile feature can still raise the standard above it.
 #
 # FATAL_ERROR when TARGET or PROTOS is missing, an argument is unrecognized, a named proto does
-# not exist or lies outside PROTO_ROOT_DIR, protoc cannot be located, or -- for
-# grpc_cpp_library() -- the gRPC C++ plugin cannot be located.
+# not exist or lies outside PROTO_ROOT_DIR, protoc cannot be located, a DEPENDENCIES label
+# rooted at this project names a subdirectory that does not declare it (see
+# import_dependencies), or -- for grpc_cpp_library() -- the gRPC C++ plugin cannot be
+# located.
 #
 # Example:
 #   protobuf_cpp_library(

@@ -40,8 +40,9 @@ define_property(TARGET PROPERTY FLATBUFFERS_SCHEMA_DIR
 # moved afterward is not picked up until the next configure.
 #
 # FATAL_ERROR when TARGET or SCHEMAS is missing, an argument is unrecognized, a named schema
-# does not exist, flatc cannot be located, or the placeholder translation unit is missing from
-# the Targets package.
+# does not exist, flatc cannot be located, a DEPENDENCIES label rooted at this project names a
+# subdirectory that does not declare it (see import_dependencies), or the placeholder
+# translation unit is missing from the Targets package.
 #
 # Example:
 #   flatbuffer_cpp_library(

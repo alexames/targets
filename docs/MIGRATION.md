@@ -77,10 +77,11 @@ cpp_library(
     TARGET MyLib
     SOURCES
         PUBLIC
-            include/mylib.h
+            mylib.h
         PRIVATE
             src/mylib.cpp
             src/utils.cpp
+    HEADER_DIR include
     INCLUDES
         PUBLIC
             include/
@@ -237,7 +238,8 @@ cpp_library(
     TARGET MyHeaderLib
     SOURCES
         PUBLIC
-            include/myheaderlib.h
+            myheaderlib.h
+    HEADER_DIR include
     INCLUDES
         PUBLIC
             include/
@@ -253,13 +255,14 @@ cpp_library(
     TARGET MyLib
     SOURCES
         PUBLIC
-            include/mylib/core/a.h
-            include/mylib/core/b.h
-            include/mylib/utils/c.h
+            mylib/core/a.h
+            mylib/core/b.h
+            mylib/utils/c.h
         PRIVATE
             src/core/a.cpp
             src/core/b.cpp
             src/utils/c.cpp
+    HEADER_DIR include
     INCLUDES
         PUBLIC include/
 )

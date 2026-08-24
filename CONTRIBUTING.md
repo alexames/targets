@@ -99,8 +99,10 @@ jobs on ubuntu-latest, windows-latest, and macos-latest:
 plus one that runs on ubuntu-latest only:
 
 - **cmake-floor** — configures and builds the examples with the exact CMake version the
-  project declares as its minimum, since every other job installs the newest release. A rule
-  that reaches above the floor without a version guard fails here.
+  project declares as its minimum, since every other job installs the newest release.
+  Whatever the examples reach that needs more than the floor fails here. They do not call
+  `cpp_test` and find no schema compilers, so those rules' own version guards are covered by
+  **test-suite** rather than by this job.
 
 Local testing usually covers only one OS, so rely on CI for cross-platform coverage and
 report your local results honestly in the PR.
