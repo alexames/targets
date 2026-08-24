@@ -1,6 +1,6 @@
 {
   "name": "targets",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Modern CMake build abstraction library with Bazel-like ergonomics",
   "homepage": "https://github.com/alexames/targets",
   "license": "MIT",
