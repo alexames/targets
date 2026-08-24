@@ -22,9 +22,9 @@ project(TestCppLibraryExportHeader VERSION 1.0.0 LANGUAGES CXX)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../cmake")
 include(Targets)
 
-# A translation unit so the library is a compiled SHARED target (not a header-only INTERFACE
-# library) and GenerateExportHeader can infer its linker language. It lives in the build tree,
-# so SOURCE_DIR points there to keep source_group(TREE) happy.
+# A translation unit with a real symbol to export, so GenerateExportHeader has something to
+# annotate. It lives in the build tree, so SOURCE_DIR points there to keep source_group(TREE)
+# happy.
 set(_src "${CMAKE_CURRENT_BINARY_DIR}/lib.cpp")
 file(WRITE "${_src}" "int answer() { return 42; }\n")
 

@@ -44,15 +44,13 @@ cpp_library(
 - **TARGET** (required): The name of the library target
 - **STATIC** / **SHARED**: Flags selecting the library's linkage. A library is STATIC by
   default (or with an explicit `STATIC`) and SHARED with `SHARED`. The two are mutually
-  exclusive — passing both is a configure-time error. Ignored when the target resolves to
-  a header-only INTERFACE library (public files, no private translation unit).
+  exclusive — passing both is a configure-time error.
 - **EXPORT_HEADER**: Flag — run CMake's `GenerateExportHeader` for this target, producing a
   `<target>_export.h` (defining the `<TARGET>_EXPORT` macro) on the target's PUBLIC include
   path, and set `CXX_VISIBILITY_PRESET hidden` / `VISIBILITY_INLINES_HIDDEN`. This is how a
   SHARED library exports symbols portably (on MSVC it populates the import library so
   consumers can link). See [SHARED libraries on Windows](#shared-libraries-on-windows). Mutually
-  exclusive with `WINDOWS_EXPORT_ALL_SYMBOLS`; rejected on executables; ignored with a warning
-  on a header-only INTERFACE library.
+  exclusive with `WINDOWS_EXPORT_ALL_SYMBOLS`; rejected on executables.
 - **WINDOWS_EXPORT_ALL_SYMBOLS**: Flag — set the `WINDOWS_EXPORT_ALL_SYMBOLS` target property
   so a SHARED library auto-exports every symbol on Windows, as an alternative to annotating
   the API with `EXPORT_HEADER`'s macro. Mutually exclusive with `EXPORT_HEADER`.
@@ -86,14 +84,13 @@ cpp_library(
 - **COPTS**: Raw compile options (translated to `target_compile_options`). Every value must
   be prefixed with PUBLIC or PRIVATE, and the same platform buckets as `DEFINITIONS` apply.
   PUBLIC options propagate to consumers (`INTERFACE_COMPILE_OPTIONS`); PRIVATE options apply
-  only to this target's build. Ignored with a warning on a header-only INTERFACE library.
+  only to this target's build.
 - **LINKOPTS**: Raw link options (translated to `target_link_options`). Same PUBLIC/PRIVATE
-  and platform-bucket rules as `COPTS`. Ignored with a warning on a header-only INTERFACE
-  library.
+  and platform-bucket rules as `COPTS`.
 - **DATA**: Runtime data files/directories (Bazel's `data`). After each build they are copied
   next to the built artifact (`$<TARGET_FILE_DIR>`) via a POST_BUILD step, so the program
   finds them by a relative path when launched from the build tree. Honors the same platform
-  buckets as the other lists. Ignored with a warning on a header-only INTERFACE library.
+  buckets as the other lists.
 - **CXX_STANDARD**: C++ standard version (11, 14, 17, 20, 23, etc.). Default: 23.
   Module scanning is off regardless of the standard - see
   [C++ modules](#c-modules).
@@ -159,23 +156,33 @@ cpp_library(
 )
 ```
 
-#### Header-only (INTERFACE) libraries
+#### Header-only libraries
 
-A library that exposes PUBLIC files and has no PRIVATE **translation unit** to compile is an
-**INTERFACE** (header-only) library. Listing a private header does not make it compiled —
-there is nothing to compile — so a header-only library keeps its detail headers under
-PRIVATE without changing kind. Such a target has no private compile step and produces no
-built artifact, so only a subset of the arguments applies:
+A library that exposes PUBLIC files and has no PRIVATE **translation unit** to compile is
+**header-only**. Listing a private header does not make it compiled — there is nothing to
+compile — so a header-only library keeps its detail headers under PRIVATE.
 
-- **Applied:** the **PUBLIC** `INCLUDES`, `DEFINITIONS`, and `DEPENDENCIES` (as interface
-  usage-requirements), `CXX_STANDARD` (as an interface feature requirement), `FOLDER`, and
-  `PROPERTIES`.
-- **Ignored with a warning:** the **PRIVATE** `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`,
-  `COPTS`, `LINKOPTS`, `DATA`, `VERSION`, `SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`,
-  `EXPORT_HEADER`, `WINDOWS_EXPORT_ALL_SYMBOLS`, and the toolchain-hygiene knobs `WARNINGS`,
-  `WERROR`, `SANITIZERS`, and `LTO`. These only apply to a compiled target (or, for `DATA`, a
-  built artifact); supplying them emits a configure-time warning naming each ignored argument
-  rather than dropping them silently.
+Targets never creates an `INTERFACE` library. A header-only library is given a shipped
+placeholder translation unit (`dummy.cpp`) and built as STATIC, like the file-less codegen
+targets already are. That keeps dependency propagation commutative: a consumer sees the same
+usage requirements from a library whatever its file list looks like, instead of the kind of
+the target changing what depending on it means.
+
+**Every argument therefore applies**, exactly as it does to a library with sources of its
+own: PRIVATE `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`, `COPTS`, `LINKOPTS`, `DATA`, `VERSION`,
+`PRECOMPILE_HEADERS`, `UNITY_BUILD`, and the toolchain-hygiene knobs all reach the compile of
+the placeholder and the archive it produces.
+
+What a consumer gets changes with it. A header-only library is a real archive on the link
+line, which affects link order, `--as-needed` behavior, and `$<TARGET_FILE:...>`. It also
+means `CXX_STANDARD` is a setting on the target rather than a requirement propagated to
+consumers: a consumer that needs a particular standard to compile these headers must ask for
+it, the same way it must for any other library's headers.
+
+`SHARED` is honored on a header-only library rather than rejected — it builds the placeholder
+into a shared library. On Windows a library that exports nothing produces no import library,
+so a consumer cannot link it; pass `WINDOWS_EXPORT_ALL_SYMBOLS` (or give the library a real
+exported symbol) if you mean to link a header-only SHARED library there.
 
 #### SHARED libraries on Windows
 
@@ -808,7 +815,7 @@ cpp_library(
 - A `.cpp` under **PUBLIC** is legal, and is how you declare a template implementation or
   `.inl` that consumers include: what PUBLIC means is "resolved against `HEADER_DIR`, part
   of the interface", not "not compiled".
-- A library is **header-only** (INTERFACE) when it has PUBLIC files and no PRIVATE
+- A library is **header-only** when it has PUBLIC files and no PRIVATE
   translation unit. Private headers do not change that — there is nothing to compile.
 - On an executable (`cpp_binary`, `cpp_test`) PUBLIC is accepted with no diagnostic and
   resolves the same way. An executable has no consumers, so the two groups differ only in
@@ -950,8 +957,7 @@ Targets automatically:
 
 On MSVC, every rule that creates a compiled target - `cpp_library`, `cpp_binary`,
 `cpp_test`, `flatbuffer_cpp_library`, `protobuf_cpp_library`, `grpc_cpp_library`, and
-`embed_binary` - injects a small, scoped set of flags into it. A header-only INTERFACE
-library has no compile step and receives none of them:
+`embed_binary` - injects a small, scoped set of flags into it:
 
 - **`/utf-8`** — always applied. Treats source and execution character sets as UTF-8.
 - **`/ZI`** (edit-and-continue debug info) — applied **only to Debug builds** (via a
@@ -1042,9 +1048,8 @@ cpp_library(
 - **`LTO`** sets the `INTERPROCEDURAL_OPTIMIZATION` target property, gated on
   `check_ipo_supported()`, so it degrades to a warning instead of a hard error where the
   toolchain cannot do it.
-- These are compile/link settings and apply only to compiled targets. On a header-only
-  INTERFACE library they are ignored with the same configure-time warning as the other
-  compile-only arguments.
+- These are compile/link settings. A header-only library compiles the placeholder
+  translation unit, so they reach it like they reach any other library.
 
 ### C++ modules
 
@@ -1061,11 +1066,10 @@ object, and no compile cache can serve it.
 `cpp_library`, `cpp_binary`, and `cpp_test` default `CXX_STANDARD` to 23, so their targets are
 in scanning range unless the caller asks for an older standard. The code-generation and embed
 rules pin or inherit the standard instead, which does not keep them out of it: a project-wide
-`CMAKE_CXX_STANDARD` of 20 or later puts them in range, and so does a dependency on a
-header-only `cpp_library`. That library carries `cxx_std_23` as an `INTERFACE` compile
-feature, and CMake compiles a consumer at the highest standard any of its compile features
-requires - above the consumer's own `CXX_STANDARD`, which keeps reading whatever the rule
-set.
+`CMAKE_CXX_STANDARD` of 20 or later puts them in range, and so does any dependency carrying an
+`INTERFACE` compile feature such as `cxx_std_23`. CMake compiles a consumer at the highest
+standard any of its compile features requires - above the consumer's own `CXX_STANDARD`, which
+keeps reading whatever the rule set.
 
 Three overrides win over the default, in increasing breadth:
 

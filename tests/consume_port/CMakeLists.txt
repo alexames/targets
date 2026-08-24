@@ -25,11 +25,29 @@ cpp_library(
     PUBLIC include
 )
 
+# A library with public headers and no translation unit of its own reaches the same shipped
+# dummy.cpp through the installed package layout. greet links it, so `cmake --build` compiles
+# and archives it, and the linker opens the archive.
+cpp_library(
+  TARGET Motto
+  HEADERS motto.h
+  HEADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
+  INCLUDES
+    PUBLIC include
+)
+
+get_target_property(_motto_type Motto TYPE)
+if(NOT _motto_type STREQUAL "STATIC_LIBRARY")
+  message(FATAL_ERROR
+    "header-only cpp_library must be STATIC_LIBRARY from the installed port, got "
+    "'${_motto_type}'")
+endif()
+
 cpp_binary(
   TARGET greet
   SOURCES src/main.cpp
   DEPENDENCIES
-    PRIVATE Greeter
+    PRIVATE Greeter Motto
 )
 
 # Exercise the source-less STATIC fallback from the INSTALLED package layout (issue #7).

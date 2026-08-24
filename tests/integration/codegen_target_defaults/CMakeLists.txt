@@ -17,11 +17,11 @@
 #   global_standard       a project-wide CMAKE_CXX_STANDARD of 23, the direct route into
 #                         scanning range. It reaches the rules that inherit the standard; the
 #                         protobuf target overrides it with its own C++17 pin.
-#   interface_propagation no project-wide standard. A header-only cpp_library dependency
-#                         carries cxx_std_23 as an INTERFACE compile feature, which raises
-#                         the standard its consumers are compiled with -- so a codegen target
-#                         reaches scanning range through a dependency alone, in a project
-#                         that never asked for C++20 anywhere.
+#   interface_propagation no project-wide standard. A dependency carrying cxx_std_23 as an
+#                         INTERFACE compile feature raises the standard its consumers are
+#                         compiled with -- so a codegen target reaches scanning range through
+#                         a dependency alone, in a project that never asked for C++20
+#                         anywhere.
 
 cmake_minimum_required(VERSION 3.28)
 
@@ -91,39 +91,31 @@ if(SCENARIO STREQUAL "global_standard")
 endif()
 
 if(SCENARIO STREQUAL "interface_propagation")
-  # A header-only cpp_library resolves to an INTERFACE library carrying cxx_std_23 as an
-  # INTERFACE compile feature. CMake compiles a consumer at the highest standard any of its
-  # compile features requires, so linking this raises each codegen target to C++23 -- and
-  # therefore into scanning range -- while its CXX_STANDARD property still reads whatever the
-  # rule set. The property is why the assertions below cannot use it to prove the raise.
-  set(_header "${CMAKE_CURRENT_BINARY_DIR}/headeronly.h")
-  file(WRITE "${_header}" "#pragma once\ninline int header_only_symbol() { return 0; }\n")
-  cpp_library(
-    TARGET HeaderOnlyLib
-    HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}"
-    HEADERS "${_header}"
-  )
+  # CMake compiles a consumer at the highest standard any of its compile features requires,
+  # so linking a dependency that carries cxx_std_23 as an INTERFACE compile feature raises
+  # each codegen target to C++23 -- and therefore into scanning range -- while its
+  # CXX_STANDARD property still reads whatever the rule set. The property is why the
+  # assertions below cannot use it to prove the raise.
+  #
+  # The carrier is declared by hand rather than by a cpp_* rule: no rule here produces a
+  # target that propagates a compile feature, and the subject is what an arbitrary dependency
+  # does to a codegen target.
+  add_library(StandardCarrier INTERFACE)
+  target_compile_features(StandardCarrier INTERFACE cxx_std_23)
 
-  get_target_property(_type HeaderOnlyLib TYPE)
-  if(NOT _type STREQUAL "INTERFACE_LIBRARY")
-    message(FATAL_ERROR
-      "HeaderOnlyLib is a ${_type}, not an INTERFACE_LIBRARY -- it would carry the compile "
-      "feature as a private setting and propagate nothing, so this scenario would assert "
-      "against a mechanism that is not present")
-  endif()
-  get_target_property(_features HeaderOnlyLib INTERFACE_COMPILE_FEATURES)
+  get_target_property(_features StandardCarrier INTERFACE_COMPILE_FEATURES)
   if(NOT "cxx_std_23" IN_LIST _features)
     message(FATAL_ERROR
-      "HeaderOnlyLib INTERFACE_COMPILE_FEATURES is '${_features}', without cxx_std_23 -- "
+      "StandardCarrier INTERFACE_COMPILE_FEATURES is '${_features}', without cxx_std_23 -- "
       "nothing would raise its consumers into scanning range and this scenario would pass "
       "against unfixed code")
   endif()
 
   foreach(_target IN LISTS _codegen_targets)
-    target_link_libraries(${_target} PUBLIC HeaderOnlyLib)
+    target_link_libraries(${_target} PUBLIC StandardCarrier)
     get_target_property(_links ${_target} LINK_LIBRARIES)
-    if(NOT "HeaderOnlyLib" IN_LIST _links)
-      message(FATAL_ERROR "${_target} does not link HeaderOnlyLib: ${_links}")
+    if(NOT "StandardCarrier" IN_LIST _links)
+      message(FATAL_ERROR "${_target} does not link StandardCarrier: ${_links}")
     endif()
   endforeach()
 

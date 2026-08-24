@@ -23,13 +23,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Targets no longer creates `INTERFACE` libraries. A library with public files and no private
+  translation unit is given the shipped `dummy.cpp` placeholder and built as `STATIC` (or
+  `SHARED` when asked), exactly as a library with no files at all already was. This keeps
+  dependency propagation commutative: a consumer sees the same usage requirements from a
+  library however it reached it, instead of the target's kind deciding what depending on it
+  means ([#79]).
+
+  Downstream, such a target changes kind. Consumers now link an archive containing one empty
+  translation unit, which changes link order, `--as-needed` behavior, and what
+  `$<TARGET_FILE:...>` and `install(TARGETS)` resolve to for those targets. An installed
+  header-only library now ships a `.lib`/`.a` and exports an import location rather than usage
+  requirements alone.
+
+  Every argument now applies to a header-only library, because it now has the compile step and
+  the built artifact they describe: the `PRIVATE` `INCLUDES`/`DEFINITIONS`/`DEPENDENCIES`,
+  `COPTS`, `LINKOPTS`, `DATA`, `VERSION`/`SOVERSION`, `PRECOMPILE_HEADERS`, `UNITY_BUILD`,
+  `EXPORT_HEADER`, `WINDOWS_EXPORT_ALL_SYMBOLS`, and the `WARNINGS`/`WERROR`/`SANITIZERS`/`LTO`
+  hygiene knobs. The configure-time warning that used to name each of these as ignored is
+  gone: nothing is ignored any more, so the warning could only fire on a case that no longer
+  exists ([#13], [#79]).
+
+  `CXX_STANDARD` is correspondingly a setting on the target rather than a requirement
+  propagated to consumers. A header-only library no longer carries `cxx_std_<N>` as an
+  `INTERFACE` compile feature, so a consumer that needs a particular standard to compile those
+  headers must ask for it, as it already must for every other library's headers ([#79]).
+
+  A translation unit listed under `SOURCES PUBLIC` is now compiled. Before, a library whose
+  only source sat there resolved to INTERFACE and that source was never built; it is now
+  handed to `add_library`, which is what `PUBLIC` has always meant -- "resolved against
+  `HEADER_DIR`, part of the interface", not "not compiled" ([#79]).
+
+  `SHARED` on a header-only library is honored rather than contradictory: it builds the
+  placeholder into a shared library. On Windows a library that exports nothing produces no
+  import library, so linking one there needs `WINDOWS_EXPORT_ALL_SYMBOLS` or a real exported
+  symbol ([#79]).
+
 - Whether a library is header-only is now decided by whether any `PRIVATE` entry is a
   translation unit, rather than by whether `SOURCES` was given at all. A library with public
   files that lists private headers and no source file is header-only; before, the private
   header made it a compiled library with nothing to compile, which CMake then failed to give
   a link language.
-  Every other shape is unchanged, including the file-less library that gets the `dummy.cpp`
-  placeholder ([#66]).
+  Every other shape is unchanged. The decision now selects whether the target is given the
+  `dummy.cpp` placeholder rather than what kind of target it is ([#66], [#79]).
 - `targets_enable_compiler_cache()` now reports a missing cache binary with a `WARNING`
   instead of a `STATUS` message, and the text says how to fix it. The caller asked for a
   cache and did not get one, the resulting build compiles everything uncached while still
@@ -52,6 +88,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The shipped `dummy.cpp` placeholder now resolves from any directory scope. `cpp_target.cmake`
+  guards its body with `include_guard(GLOBAL)`, so the body runs in the first directory scope
+  that includes Targets and nowhere else; the placeholder path was read at call time from a
+  variable that body set, which a sibling directory including Targets for itself never sees.
+  Every rule that needs the placeholder failed there with a path that had lost its root. The
+  path is now derived inside the function from its own module directory ([#79]).
 - `flatbuffer_cpp_library`, `protobuf_cpp_library`, `grpc_cpp_library`, and `embed_binary`
   now carry the same target-wide settings as `cpp_library`/`cpp_binary`/`cpp_test`:
   `CXX_SCAN_FOR_MODULES OFF`, and on MSVC `/utf-8` plus the Debug debug-information format
@@ -59,9 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `add_library()`, so nothing applied in `cpp_target` ever reached it. The gap is not
   theoretical for module scanning: these rules do not default the standard to 23, but a
   project-wide `CMAKE_CXX_STANDARD` of 20 or later puts their targets in scanning range, and
-  so does a dependency on a header-only `cpp_library`, whose `INTERFACE` `cxx_std_23` compile
-  feature raises the standard its consumers are compiled at regardless of their own
-  `CXX_STANDARD` ([#70]).
+  so does any dependency carrying an `INTERFACE` compile feature such as `cxx_std_23`, which
+  raises the standard its consumers are compiled at regardless of their own `CXX_STANDARD`
+  ([#70]).
 - The settings every compiled target carries moved into one shared helper that all four
   creation sites call, and a new `common_target_defaults_coverage` test reads the shipped
   CMake sources and fails on any rule that creates a compiled target without calling it. A
@@ -222,6 +264,7 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#62]: https://github.com/alexames/targets/issues/62
 [#66]: https://github.com/alexames/targets/issues/66
 [#70]: https://github.com/alexames/targets/issues/70
+[#79]: https://github.com/alexames/targets/issues/79
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355

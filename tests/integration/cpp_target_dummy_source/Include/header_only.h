@@ -1,6 +1,6 @@
 #pragma once
 
-// Fixture header for the header-only INTERFACE library exercised by the issue #7
-// regression test. Its mere presence (HEADERS with no SOURCES) must produce an INTERFACE
-// library, never a STATIC library carrying dummy.cpp.
+// Fixture header for the header-only library the test beside this file declares. Its
+// presence (HEADERS with no SOURCES) is what leaves that library with no translation unit
+// of its own, so it must be given the shipped placeholder.
 inline int header_only_answer() { return 42; }

@@ -37,4 +37,23 @@ cpp_library(
     EXPORT WidgetKitTargets
 )
 
-message(STATUS "Example: install_export - Created installable/exportable target Widget")
+# A library with no translation unit of its own, installed and exported through the same
+# export set. It archives the shipped placeholder TU, so it installs a real artifact and a
+# downstream find_package resolves an imported target with an import location like any other.
+cpp_library(
+    TARGET WidgetTraits
+    SOURCES
+        PUBLIC
+            widget/widget_traits.h
+    HEADER_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    INCLUDES
+        PUBLIC
+            include/
+    CXX_STANDARD 17
+    INSTALL
+    EXPORT WidgetKitTargets
+)
+
+message(STATUS
+    "Example: install_export - Created installable/exportable targets Widget and WidgetTraits")

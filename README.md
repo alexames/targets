@@ -99,8 +99,8 @@ This is exactly how the [`examples/`](examples/) build.
 
 Every rule and argument is specified in the [API reference](docs/API.md); the highlights:
 
-- **Core rules** — [`cpp_library`](docs/API.md#cpp_library) (STATIC/SHARED, header-only
-  [INTERFACE detection](docs/API.md#header-only-interface-libraries)),
+- **Core rules** — [`cpp_library`](docs/API.md#cpp_library) (STATIC/SHARED,
+  [header-only libraries](docs/API.md#header-only-libraries)),
   [`cpp_binary`](docs/API.md#cpp_binary) (debugger conveniences), and
   [`cpp_test`](docs/API.md#cpp_test) (Google Test acquired lazily, Bazel-style
   `SIZE`/`LABELS`/`ARGS`, an empty-suite guard).

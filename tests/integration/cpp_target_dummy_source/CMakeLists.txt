@@ -1,17 +1,14 @@
-# Configure-mode regression test for cpp_target()'s dummy.cpp fallback and header-only
-# INTERFACE detection (issue #7).
+# Configure-mode regression test for the placeholder translation unit cpp_target() injects.
 #
-# Two intertwined behaviors are asserted:
-#   1. A library with HEADERS but no SOURCES must become an INTERFACE library and must NOT
-#      gain the dummy.cpp placeholder translation unit. Before the fix, the dummy was
-#      appended to the sources list *before* the INTERFACE decision, so the moment the
-#      dummy path resolved every header-only library silently became a STATIC library
-#      containing only dummy.cpp (changing its usage-requirement semantics).
-#   2. A library with neither SOURCES nor HEADERS (e.g. a codegen STATIC target whose TUs
-#      are produced by custom commands) must configure as a STATIC library carrying the
-#      shipped dummy.cpp placeholder TU. Before the fix the fallback pointed at the wrong
-#      directory (cmake/core/dummy.cpp instead of cmake/dummy.cpp) and never fired, so this
-#      failed with CMake's "No SOURCES given to target".
+# Every library these rules create is a compiled one, so a consumer sees the same usage
+# requirements however it reached the target. A library with nothing of its own to compile
+# therefore gets the shipped dummy.cpp: that covers a header-only library (public files, no
+# private translation unit) and a codegen library whose translation units are produced by
+# custom commands (no files at all). Both are asserted here, because each reaches the
+# placeholder by a different route through the file lists.
+#
+# The placeholder is resolved from the shipped cmake/dummy.cpp; a checkout or package that
+# failed to ship it fails loudly rather than producing a library with no translation unit.
 #
 # A FATAL_ERROR in any assertion makes configuration exit non-zero and fails the CTest.
 
@@ -21,24 +18,22 @@ project(TestCppTargetDummySource LANGUAGES CXX)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../../cmake")
 include(Targets)
 
-# (1) Header-only library: HEADERS but no SOURCES -> INTERFACE, and no dummy TU.
+# (1) Header-only library: HEADERS but no SOURCES -> STATIC carrying the placeholder TU.
 cpp_library(
   TARGET HeaderOnlyLib
   HEADERS header_only.h
 )
 
 get_target_property(_ho_type HeaderOnlyLib TYPE)
-if(NOT _ho_type STREQUAL "INTERFACE_LIBRARY")
+if(NOT _ho_type STREQUAL "STATIC_LIBRARY")
   message(FATAL_ERROR
-    "header-only cpp_library must be INTERFACE_LIBRARY, got '${_ho_type}' "
-    "(dummy.cpp likely flipped it to STATIC -- issue #7)")
+    "header-only cpp_library must be STATIC_LIBRARY, got '${_ho_type}'")
 endif()
 
-# An INTERFACE library must not carry a compiled placeholder TU.
 get_target_property(_ho_sources HeaderOnlyLib SOURCES)
-if(_ho_sources AND _ho_sources MATCHES "dummy\\.cpp")
+if(NOT _ho_sources MATCHES "dummy\\.cpp")
   message(FATAL_ERROR
-    "header-only INTERFACE library must not carry the dummy.cpp TU: ${_ho_sources}")
+    "header-only library must carry the dummy.cpp placeholder TU, got: '${_ho_sources}'")
 endif()
 
 # (2) Source-less, header-less library -> STATIC carrying the dummy.cpp placeholder TU.
@@ -49,14 +44,14 @@ cpp_library(
 get_target_property(_gen_type GeneratedLib TYPE)
 if(NOT _gen_type STREQUAL "STATIC_LIBRARY")
   message(FATAL_ERROR
-    "source-less cpp_library must be STATIC_LIBRARY, got '${_gen_type}' (issue #7)")
+    "source-less cpp_library must be STATIC_LIBRARY, got '${_gen_type}'")
 endif()
 
 get_target_property(_gen_sources GeneratedLib SOURCES)
 if(NOT _gen_sources MATCHES "dummy\\.cpp")
   message(FATAL_ERROR
     "source-less STATIC library must carry the dummy.cpp placeholder TU, got: "
-    "'${_gen_sources}' (issue #7)")
+    "'${_gen_sources}'")
 endif()
 
-message(STATUS "cpp_target dummy.cpp / INTERFACE test passed (issue #7)")
+message(STATUS "cpp_target dummy.cpp placeholder test passed")

@@ -7,8 +7,8 @@
 # land with the correct visibility and platform filtering. DATA staging is a POST_BUILD copy
 # whose runtime behaviour is proven by the examples/data_files example (built and run in CI);
 # here the "data_stage" scenario only proves the staging wiring configures cleanly for both a
-# file and a directory, and "interface_warns" proves COPTS/LINKOPTS/DATA are reported as
-# ignored on a header-only INTERFACE library (consistent with issue #13).
+# file and a directory, and "header_only" proves COPTS/LINKOPTS/DATA reach a library whose
+# only translation unit is the shipped placeholder.
 #
 # No C++ toolchain is needed: the options are stored as literal strings regardless of the
 # active compiler, so the project enables no languages and each scenario halts (via a sentinel
@@ -22,12 +22,12 @@ include(Targets)
 
 if(NOT DEFINED SCENARIO)
   message(FATAL_ERROR
-    "This test project requires -DSCENARIO=<copts|linkopts|data_stage|interface_warns>")
+    "This test project requires -DSCENARIO=<copts|linkopts|data_stage|header_only>")
 endif()
 
-# A real translation unit in the build tree so a compiled (non-INTERFACE) target is created;
-# SOURCE_DIR points there to keep source_group(TREE) happy. It is never compiled (LANGUAGES
-# NONE); every scenario halts before generation.
+# A real translation unit in the build tree; SOURCE_DIR points there to keep
+# source_group(TREE) happy. It is never compiled (LANGUAGES NONE); every scenario halts
+# before generation.
 set(_src "${CMAKE_CURRENT_BINARY_DIR}/opts.cpp")
 file(WRITE "${_src}" "int opts_symbol() { return 0; }\n")
 
@@ -107,9 +107,9 @@ elseif(SCENARIO STREQUAL "data_stage")
   endif()
   message(FATAL_ERROR "DATA_STAGE_OK: DATA file + directory staging wired")
 
-elseif(SCENARIO STREQUAL "interface_warns")
-  # COPTS/LINKOPTS are compile/link settings and DATA stages next to an artifact; a header-only
-  # INTERFACE library has neither, so all three must be reported as ignored (issue #13 policy).
+elseif(SCENARIO STREQUAL "header_only")
+  # A header-only library compiles the placeholder translation unit and archives it, so it has
+  # the compile step COPTS/LINKOPTS describe and the artifact DATA is staged beside.
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/opts.h" "#pragma once\nint hdr_only();\n")
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/opts_data.txt" "data\n")
   cpp_library(TARGET OptHeaderOnly
@@ -118,7 +118,11 @@ elseif(SCENARIO STREQUAL "interface_warns")
     COPTS PRIVATE -fno-rtti
     LINKOPTS PRIVATE -s
     DATA "${CMAKE_CURRENT_BINARY_DIR}/opts_data.txt")
-  message(FATAL_ERROR "interface_warns: expected an ignored-argument warning, not this")
+  _get_opts(_copts OptHeaderOnly COMPILE_OPTIONS)
+  _get_opts(_lopts OptHeaderOnly LINK_OPTIONS)
+  _expect_in(_copts "-fno-rtti")
+  _expect_in(_lopts "-s")
+  message(FATAL_ERROR "OPTS_HEADER_ONLY_OK: options and DATA reach a header-only library")
 
 else()
   message(FATAL_ERROR "test harness: unknown or unset SCENARIO '${SCENARIO}'")
