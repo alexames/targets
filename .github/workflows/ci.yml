@@ -82,10 +82,10 @@ jobs:
             exit 1
           }
 
-      # Runs the SHARED-library example (issue #21). On Windows this only launches if
-      # Greeter.dll was staged next to GreeterApp.exe (proving DLL staging) and the exe linked
-      # against a populated import library (proving EXPORT_HEADER exports symbols). On
-      # Ubuntu/macOS it links the shared object, found via the build-tree RPATH.
+      # Runs the SHARED-library example. On Windows this only launches if Greeter.dll was
+      # staged next to GreeterApp.exe (proving DLL staging) and the exe linked against a
+      # populated import library (proving EXPORT_HEADER exports symbols). On Ubuntu/macOS it
+      # links the shared object, found via the build-tree RPATH.
       - name: Test shared_library example (Ubuntu/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -106,9 +106,9 @@ jobs:
             exit 1
           }
 
-      # Runs the DATA-staging example (issue #27). DataApp opens a data file by relative name,
-      # so it only succeeds if the DATA attribute copied message.txt into the executable's own
-      # directory; the exe is run FROM that directory to prove the file landed next to it.
+      # Runs the DATA-staging example. DataApp opens a data file by relative name, so it only
+      # succeeds if the DATA attribute copied message.txt into the executable's own directory;
+      # the exe is run FROM that directory to prove the file landed next to it.
       - name: Test data_files example (Ubuntu/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -221,7 +221,7 @@ jobs:
 
       # Installs the in-repo ports/targets overlay port end-to-end and configures a real
       # consumer that calls find_package(Targets CONFIG REQUIRED). This fails if the port
-      # ever regresses to installing a layout that find_package cannot resolve (issue #2).
+      # ever regresses to installing a layout that find_package cannot resolve.
       - name: Configure consumer against the overlay port
         env:
           # See the Build Examples job: disable the broken x-gha binary cache so vcpkg installs
@@ -255,7 +255,7 @@ jobs:
       - name: Setup CMake
         uses: lukka/get-cmake@latest
 
-      # End-to-end proof of the install/export feature (issue #20). The producer is the
+      # End-to-end proof of the install/export feature. The producer is the
       # examples/install_export project: a cpp_library marked INSTALL EXPORT. It has no
       # external dependencies, so no vcpkg toolchain is needed -- the OS's default compiler
       # (gcc/clang/MSVC) suffices. Build it and install it to a staging prefix.
