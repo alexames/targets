@@ -6,9 +6,10 @@ cpp_library(
     TARGET Greeter
     SHARED
     SOURCES
-        src/greeter.cpp
-    HEADERS
-        greeter/greeter.h
+        PUBLIC
+            greeter/greeter.h
+        PRIVATE
+            src/greeter.cpp
     HEADER_DIR
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     INCLUDES

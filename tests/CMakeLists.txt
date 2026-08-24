@@ -72,6 +72,110 @@ add_test(
 set_tests_properties(cpp_target_valid_visibility PROPERTIES
   PASS_REGULAR_EXPRESSION "VALID_OK")
 
+# The banner message(DEPRECATION) prints. Matching the banner rather than the message text
+# is what proves a report is the kind -Werror=deprecated promotes to a configure error; the
+# text alone would match a STATUS message just as well. CMake 4.4 renamed it -- "CMake
+# Deprecation Warning at" became "CMake Warning (deprecated) at" when CMP0218 reworked
+# diagnostics -- so an expression carrying one spelling tests nothing on half the CMake
+# versions this project supports.
+set(_targets_deprecation_banner
+  "CMake[ \t]+(Deprecation[ \t]+Warning|Warning[ \t]+[(]deprecated[)])[ \t]+at")
+
+# SOURCES spelling (issue #66). SOURCES takes either PUBLIC/PRIVATE groups or the deprecated
+# bare list, told apart by its first entry; anything between the two is rejected. Each
+# negative scenario halts with its own "was accepted" message if the call it makes goes
+# through, and the FAIL expression matches that -- a PASS expression alone makes CTest ignore
+# the exit code, so a diagnostic demoted from FATAL_ERROR to a warning would otherwise still
+# print the wording the PASS expression looks for. CMake word-wraps both, so the phrases are
+# matched with whitespace-tolerant separators.
+add_test(
+  NAME cpp_target_sources_mixed_spelling_rejected
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=sources_mixed
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_sources_mixed"
+)
+set_tests_properties(cpp_target_sources_mixed_spelling_rejected PROPERTIES
+  PASS_REGULAR_EXPRESSION "mixes[ \t\r\n]+the[ \t\r\n]+two[ \t\r\n]+spellings"
+  FAIL_REGULAR_EXPRESSION "was[ \t\r\n]+accepted")
+
+add_test(
+  NAME cpp_target_sources_grouped_with_headers_rejected
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=sources_grouped_with_headers
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_grouped_headers"
+)
+set_tests_properties(cpp_target_sources_grouped_with_headers_rejected PROPERTIES
+  PASS_REGULAR_EXPRESSION "two[ \t\r\n]+spellings[ \t\r\n]+of[ \t\r\n]+the[ \t\r\n]+same"
+  FAIL_REGULAR_EXPRESSION "was[ \t\r\n]+accepted")
+
+# The deprecated spelling has to keep working unchanged, and has to say it is deprecated.
+# Both facts come from one scenario, read by two tests. Every assertion in that scenario
+# names it ("sources_legacy: ..."), which its own halt does not, so the FAIL expression
+# tells a tripped assertion from the halt the PASS expression is looking for.
+add_test(
+  NAME cpp_target_sources_legacy_configures
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=sources_legacy
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_sources_legacy"
+)
+set_tests_properties(cpp_target_sources_legacy_configures PROPERTIES
+  PASS_REGULAR_EXPRESSION "LEGACY_SOURCES_OK"
+  FAIL_REGULAR_EXPRESSION "sources_legacy:")
+
+add_test(
+  NAME cpp_target_sources_legacy_deprecated
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=sources_legacy
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_legacy_deprecated"
+)
+set_tests_properties(cpp_target_sources_legacy_deprecated PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_targets_deprecation_banner}[^\n]*cpp_target[.]cmake"
+  FAIL_REGULAR_EXPRESSION "sources_legacy:")
+
+# How many reports a configure produces, which is the point of the once-per-configure guard
+# and is what a CTest regex cannot tell: a regex says a report appeared, not that a consumer
+# with hundreds of targets got one rather than hundreds. The script drives two configures of
+# a two-legacy-target scenario -- one plain, one with TARGETS_WARN_ALL_LEGACY_SOURCES=ON --
+# and counts the banners in each. Its assertions are all FATAL_ERROR, so the exit code
+# decides and no PASS expression may be attached.
+add_test(
+  NAME cpp_target_legacy_warning_volume
+  COMMAND "${CMAKE_COMMAND}"
+    "-DFIXTURE_DIR=${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
+    "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_legacy_warning_volume"
+    -P "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation/legacy_warning_volume.cmake"
+)
+
+# The grouped spelling reaches the same place and must not report itself deprecated, so the
+# deprecation banner joins the tripped-assertion phrase in the FAIL expression.
+add_test(
+  NAME cpp_target_sources_grouped
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=sources_grouped
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_sources_grouped"
+)
+set_tests_properties(cpp_target_sources_grouped PROPERTIES
+  PASS_REGULAR_EXPRESSION "GROUPED_SOURCES_OK"
+  FAIL_REGULAR_EXPRESSION "sources_grouped:;${_targets_deprecation_banner}")
+
+# One grammar everywhere: an executable takes PUBLIC file entries with no diagnostic of its
+# own, and a source file is as legal under PUBLIC as a header is.
+add_test(
+  NAME cpp_target_sources_public_on_executable
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=sources_public_on_executable
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_public_on_exe"
+)
+set_tests_properties(cpp_target_sources_public_on_executable PROPERTIES
+  PASS_REGULAR_EXPRESSION "PUBLIC_ON_EXECUTABLE_OK"
+  FAIL_REGULAR_EXPRESSION "sources_public_on_executable:;${_targets_deprecation_banner}")
+
 # Source grouping robustness (regression test for issue #6). A generated source/header in
 # an out-of-source build tree (outside SOURCE_DIR/HEADER_DIR) must not fail configuration:
 # source_group(TREE ...) errors on out-of-root files, so those files are grouped flat
@@ -81,9 +185,37 @@ set_tests_properties(cpp_target_valid_visibility PROPERTIES
 add_test(
   NAME cpp_target_source_group_out_of_root
   COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=out_of_root
     -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_source_group"
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_source_group"
 )
+
+# The two grouping roots are also the two base directories (issue #66): a PRIVATE entry
+# resolves against SOURCE_DIR and a PUBLIC one against HEADER_DIR. The fixture asserts the
+# resolved paths, and the files it names exist under one base only, so a swap makes
+# generation fail on a missing source. The exit code decides, hence no PASS expression.
+add_test(
+  NAME cpp_target_source_group_visibility_base_dirs
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=visibility_base_dirs
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_source_group"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_source_group_base_dirs"
+)
+
+# The IDE groups those files land in. source_group() leaves nothing a configure-time
+# assertion can read, so this drives its own configure and reads the .vcxproj.filters file --
+# which only a Visual Studio generator writes. The outer generator is reused because it is
+# the Visual Studio known to be installed.
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+  add_test(
+    NAME cpp_target_source_group_ide_groups
+    COMMAND "${CMAKE_COMMAND}"
+      "-DFIXTURE_DIR=${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_source_group"
+      "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_source_group_ide_groups"
+      "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+      -P "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_source_group/ide_source_groups.cmake"
+  )
+endif()
 
 # dummy.cpp fallback and header-only INTERFACE detection (regression test for issue #7).
 # A library with HEADERS but no SOURCES must be an INTERFACE library with no dummy TU;
@@ -242,6 +374,34 @@ add_test(
 )
 set_tests_properties(cpp_library_default_type PROPERTIES
   PASS_REGULAR_EXPRESSION "DEFAULT_OK")
+
+# Compiled vs header-only under the PUBLIC/PRIVATE spelling (issue #66). The decision is
+# made on whether any PRIVATE entry is a translation unit, so these two calls differ in one
+# private file and must land on different target kinds. Getting it wrong in either direction
+# silently changes what linking to the target means, so both are pinned. Each scenario names
+# itself in its assertions ("grouped_interface: ...") but not in its halt, so the FAIL
+# expression tells a tripped assertion from the halt the PASS expression looks for.
+add_test(
+  NAME cpp_library_grouped_interface_type
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=grouped_interface
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_grouped_interface"
+)
+set_tests_properties(cpp_library_grouped_interface_type PROPERTIES
+  PASS_REGULAR_EXPRESSION "GROUPED_INTERFACE_OK"
+  FAIL_REGULAR_EXPRESSION "grouped_interface:")
+
+add_test(
+  NAME cpp_library_grouped_static_type
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=grouped_static
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_type"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_type_grouped_static"
+)
+set_tests_properties(cpp_library_grouped_static_type PROPERTIES
+  PASS_REGULAR_EXPRESSION "GROUPED_STATIC_OK"
+  FAIL_REGULAR_EXPRESSION "grouped_static:")
 
 # cpp_test() FOLDER/PROPERTIES robustness (regression tests for issue #15). cpp_test() used
 # to re-parse only TARGET/FOLDER/WORKING_DIRECTORY over the full argument list, naming none

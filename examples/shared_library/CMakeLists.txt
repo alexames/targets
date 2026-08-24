@@ -26,7 +26,7 @@ add_subdirectory(greeter)
 # executable automatically, so running it from the build tree just works.
 cpp_binary(
     TARGET GreeterApp
-    SOURCES app/main.cpp
+    SOURCES PRIVATE app/main.cpp
     DEPENDENCIES
         PRIVATE
             Greeter

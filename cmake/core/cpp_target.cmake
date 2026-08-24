@@ -33,6 +33,15 @@ option(TARGETS_STAGE_RUNTIME_DLLS
 option(TARGETS_SCAN_FOR_MODULES
   "Leave module-import scanning to CMake's default instead of disabling it per target" OFF)
 
+# Whether every call that spells its file lists the deprecated way is reported, rather than
+# only the first of a configure. A project with hundreds of targets buries every other
+# message under the per-call form, so the first call alone is reported by default; the
+# per-call form is what names the CMakeLists lines left to migrate. CMake's own
+# -Wno-deprecated silences the report and -Werror=deprecated promotes it to a configure
+# error whichever way this option is set.
+option(TARGETS_WARN_ALL_LEGACY_SOURCES
+  "Report every use of the deprecated bare SOURCES / HEADERS spelling, not just the first" OFF)
+
 # Include dependency management
 get_filename_component(_TARGETS_MODULE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_MODULE_DIR}" PATH)
@@ -92,6 +101,103 @@ function(_targets_parse_access_specifier RULE VAR_NAME)
   endif()
   set(PUBLIC_${VAR_NAME} ${ACCESS_SPECIFIER_PUBLIC} PARENT_SCOPE)
   set(PRIVATE_${VAR_NAME} ${ACCESS_SPECIFIER_PRIVATE} PARENT_SCOPE)
+endfunction()
+
+# Split a file-list argument that accepts either the visibility-grouped spelling or the
+# deprecated bare list into PUBLIC_<VAR_NAME>, PRIVATE_<VAR_NAME> and <VAR_NAME>_SPELLING
+# (set in the caller's scope). RULE names the calling rule for diagnostics, VAR_NAME the
+# argument, and the entries to split are the trailing arguments. <VAR_NAME>_SPELLING reads
+# "grouped", "legacy" or "none", so the caller can report the deprecated spellings.
+#
+# The first entry alone decides. Opening with PUBLIC or PRIVATE selects the grouped
+# spelling, handed to _targets_parse_access_specifier; any other opening entry is the bare
+# list, every entry of which is private.
+#
+# A list that opens bare and names PUBLIC or PRIVATE later is rejected here. Read as a bare
+# list the keyword becomes a file name; read as a grouped one the entries ahead of it are
+# exactly what _targets_parse_access_specifier exists to reject -- but it never sees them,
+# because cmake_parse_arguments leaves nothing unparsed once the first entry is a keyword.
+# This check is the only thing standing between that shape and a silent misreading.
+function(_targets_parse_source_visibility RULE VAR_NAME)
+  set(entries ${ARGN})
+  list(LENGTH entries entry_count)
+  if(entry_count EQUAL 0)
+    set(PUBLIC_${VAR_NAME} "" PARENT_SCOPE)
+    set(PRIVATE_${VAR_NAME} "" PARENT_SCOPE)
+    set(${VAR_NAME}_SPELLING "none" PARENT_SCOPE)
+    return()
+  endif()
+
+  list(GET entries 0 first_entry)
+  if(first_entry STREQUAL "PUBLIC" OR first_entry STREQUAL "PRIVATE")
+    _targets_parse_access_specifier("${RULE}" ${VAR_NAME} ${entries})
+    set(PUBLIC_${VAR_NAME} "${PUBLIC_${VAR_NAME}}" PARENT_SCOPE)
+    set(PRIVATE_${VAR_NAME} "${PRIVATE_${VAR_NAME}}" PARENT_SCOPE)
+    set(${VAR_NAME}_SPELLING "grouped" PARENT_SCOPE)
+    return()
+  endif()
+
+  if("PUBLIC" IN_LIST entries OR "PRIVATE" IN_LIST entries)
+    message(FATAL_ERROR
+      "${RULE}: ${VAR_NAME} mixes the two spellings. It opens with the bare entry "
+      "'${first_entry}' and names a PUBLIC or PRIVATE keyword later, so the entries ahead "
+      "of that keyword would be dropped. Write either every entry under PUBLIC/PRIVATE "
+      "groups -- PUBLIC resolves against HEADER_DIR, PRIVATE against SOURCE_DIR -- or none "
+      "of them (the deprecated bare list, which is entirely private).")
+  endif()
+
+  set(PUBLIC_${VAR_NAME} "" PARENT_SCOPE)
+  set(PRIVATE_${VAR_NAME} "${entries}" PARENT_SCOPE)
+  set(${VAR_NAME}_SPELLING "legacy" PARENT_SCOPE)
+endfunction()
+
+# Report in OUT_VAR whether any of the trailing entries is a translation unit -- a file the
+# compiler is asked to build -- rather than a header. This is what separates a compiled
+# library from a header-only INTERFACE one, so an entry whose type cannot be read off its
+# name counts as a translation unit: judging it the other way would turn a compiled library
+# into an INTERFACE one, silently changing what linking to it means.
+#
+# The header list must never gain a module interface unit (.ixx, .cppm): those compile,
+# and adding one would turn a library that has only module sources into an INTERFACE.
+function(_targets_any_translation_unit OUT_VAR)
+  set(header_extensions h hh hpp hxx h++ hp inl inc ipp tcc tpp)
+  foreach(entry IN LISTS ARGN)
+    get_filename_component(extension "${entry}" LAST_EXT)
+    string(TOLOWER "${extension}" extension)
+    string(REGEX REPLACE "^\\." "" extension "${extension}")
+    if(NOT extension IN_LIST header_extensions)
+      set(${OUT_VAR} TRUE PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+  set(${OUT_VAR} FALSE PARENT_SCOPE)
+endfunction()
+
+# Report that TARGET_NAME spells its file lists the deprecated way. SPELLING names what the
+# call wrote, for the diagnostic.
+#
+# Only the first such call of a configure is reported unless TARGETS_WARN_ALL_LEGACY_SOURCES
+# is set. A global property carries the run-once state, which lives for one configure and so
+# re-arms on the next.
+function(_targets_warn_legacy_source_spelling TARGET_NAME SPELLING)
+  if(NOT TARGETS_WARN_ALL_LEGACY_SOURCES)
+    get_property(announced GLOBAL PROPERTY _TARGETS_LEGACY_SOURCES_ANNOUNCED)
+    if(announced)
+      return()
+    endif()
+    set_property(GLOBAL PROPERTY _TARGETS_LEGACY_SOURCES_ANNOUNCED ON)
+    set(remaining_hint "")
+    string(APPEND remaining_hint
+      " Configure with -DTARGETS_WARN_ALL_LEGACY_SOURCES=ON to name every other call that"
+      " still does.")
+  else()
+    set(remaining_hint "")
+  endif()
+  message(DEPRECATION
+    "cpp_target: '${TARGET_NAME}' declares its files with ${SPELLING}. Group them under "
+    "SOURCES instead: PUBLIC entries resolve against HEADER_DIR and PRIVATE entries against "
+    "SOURCE_DIR, which is what HEADERS and a bare SOURCES list already mean. The old "
+    "spelling still works and is scheduled for removal.${remaining_hint}")
 endfunction()
 
 # Partition absolute file paths into those located under ROOT and those outside it.
@@ -346,8 +452,8 @@ function(cpp_target)
     WARNINGS                  # Opt-in warning level: off | default | strict (issue #23)
   )
   set(multi_value_args
-    SOURCES                   # Source files
-    HEADERS                   # Header files
+    SOURCES                   # Files (with PUBLIC/PRIVATE), or a deprecated bare list
+    HEADERS                   # Deprecated spelling of SOURCES PUBLIC
     INCLUDES                  # Include directories (with PUBLIC/PRIVATE)
     DEFINITIONS               # Compiler definitions (with PUBLIC/PRIVATE)
     DEPENDENCIES              # Link libraries (with PUBLIC/PRIVATE)
@@ -433,33 +539,74 @@ function(cpp_target)
     set(args_NAMESPACE_ROOT "${PROJECT_SOURCE_DIR}/Source")
   endif()
 
-  # Filter platform-conditional entries out of list arguments.
-  _targets_parse_platforms(args_SOURCES ${args_SOURCES})
+  # Whether HEADERS was given any values. _targets_parse_platforms below defines the
+  # variable whether or not the caller passed the keyword, so this has to be read first.
+  set(headers_given FALSE)
+  if(DEFINED args_HEADERS)
+    set(headers_given TRUE)
+  endif()
+
+  # Split the file lists by visibility. PUBLIC entries are the target's interface and
+  # resolve against HEADER_DIR; PRIVATE entries are its implementation and resolve against
+  # SOURCE_DIR. SOURCES accepts either the grouped spelling or the deprecated bare list
+  # (entirely private); HEADERS is the deprecated spelling of the public group.
+  _targets_parse_source_visibility("cpp_target" SOURCES ${args_SOURCES})
+
+  # One call cannot use both spellings for its public files: the grouped SOURCES and HEADERS
+  # describe the same list, and nothing in the call says which the author meant to keep.
+  if(SOURCES_SPELLING STREQUAL "grouped" AND headers_given)
+    message(FATAL_ERROR
+      "cpp_target: '${args_TARGET}' groups SOURCES under PUBLIC/PRIVATE and also passes "
+      "HEADERS, which are two spellings of the same public file list. Move the HEADERS "
+      "entries under SOURCES PUBLIC -- they resolve against HEADER_DIR either way.")
+  endif()
+
+  set(legacy_spelling "")
+  if(SOURCES_SPELLING STREQUAL "legacy")
+    set(legacy_spelling "a bare SOURCES list")
+  endif()
+  if(headers_given)
+    if(legacy_spelling)
+      string(APPEND legacy_spelling " and HEADERS")
+    else()
+      set(legacy_spelling "HEADERS")
+    endif()
+  endif()
+  if(legacy_spelling)
+    _targets_warn_legacy_source_spelling("${args_TARGET}" "${legacy_spelling}")
+  endif()
+
+  # Filter platform-conditional entries out of list arguments. The visibility split runs
+  # first, so in the grouped spelling a platform sentinel acts inside one visibility group,
+  # exactly as it does for DEPENDENCIES.
+  _targets_parse_platforms(PUBLIC_SOURCES ${PUBLIC_SOURCES})
+  _targets_parse_platforms(PRIVATE_SOURCES ${PRIVATE_SOURCES})
   _targets_parse_platforms(args_HEADERS ${args_HEADERS})
+  list(APPEND PUBLIC_SOURCES ${args_HEADERS})
   # DATA carries no PUBLIC/PRIVATE (a runtime file has no visibility), so it is platform-
   # filtered directly here; COPTS/LINKOPTS carry visibility and are parsed in the compiled
   # branch alongside DEFINITIONS (issue #27).
   _targets_parse_platforms(args_DATA ${args_DATA})
 
-  # Gather source files
-  unset(sources)
-  foreach(source ${args_SOURCES})
-    if(IS_ABSOLUTE "${source}")
-      list(APPEND sources "${source}")
+  # Gather the private files
+  unset(private_files)
+  foreach(entry ${PRIVATE_SOURCES})
+    if(IS_ABSOLUTE "${entry}")
+      list(APPEND private_files "${entry}")
     else()
-      list(APPEND sources "${args_SOURCE_DIR}/${source}")
+      list(APPEND private_files "${args_SOURCE_DIR}/${entry}")
     endif()
   endforeach()
 
   # Create source groups for IDE organization. source_group(TREE ...) hard-errors on any
-  # file outside the tree root, so out-of-root sources (generated files in an out-of-source
+  # file outside the tree root, so out-of-root files (generated files in an out-of-source
   # build tree, or ../shared sources) are collected into a flat "Generated Files" group
   # instead of aborting configuration (see issue #6). The dummy.cpp placeholder for
-  # source-less targets is injected later, at target creation, so that the header-only
-  # INTERFACE decision is made on the user's own sources alone (see issue #7).
-  if(sources)
+  # file-less targets is injected later, at target creation, so that the header-only
+  # INTERFACE decision is made on the user's own files alone (see issue #7).
+  if(private_files)
     _targets_partition_files_by_root(
-      "${args_SOURCE_DIR}" in_tree_sources out_of_tree_sources ${sources})
+      "${args_SOURCE_DIR}" in_tree_sources out_of_tree_sources ${private_files})
     if(in_tree_sources)
       source_group(TREE "${args_SOURCE_DIR}" PREFIX "Source Files" FILES ${in_tree_sources})
     endif()
@@ -468,21 +615,22 @@ function(cpp_target)
     endif()
   endif()
 
-  # Gather header files
-  unset(headers)
-  foreach(header ${args_HEADERS})
-    if(IS_ABSOLUTE "${header}")
-      list(APPEND headers "${header}")
+  # Gather the public files
+  unset(public_files)
+  foreach(entry ${PUBLIC_SOURCES})
+    if(IS_ABSOLUTE "${entry}")
+      list(APPEND public_files "${entry}")
     else()
-      list(APPEND headers "${args_HEADER_DIR}/${header}")
+      list(APPEND public_files "${args_HEADER_DIR}/${entry}")
     endif()
   endforeach()
 
-  # Create header source groups. Out-of-root headers get the same flat "Generated Files"
-  # grouping as sources so a generated header never aborts configuration (see issue #6).
-  if(headers)
+  # Create public source groups. Out-of-root public files get the same flat "Generated
+  # Files" grouping as private ones so a generated header never aborts configuration (see
+  # issue #6).
+  if(public_files)
     _targets_partition_files_by_root(
-      "${args_HEADER_DIR}" in_tree_headers out_of_tree_headers ${headers})
+      "${args_HEADER_DIR}" in_tree_headers out_of_tree_headers ${public_files})
     if(in_tree_headers)
       source_group(TREE "${args_HEADER_DIR}" PREFIX "Header Files" FILES ${in_tree_headers})
     endif()
@@ -508,24 +656,26 @@ function(cpp_target)
       set(library_type STATIC)
     endif()
 
-    # Handle header-only libraries. The INTERFACE decision is made on the user's own
-    # SOURCES: a header-only library (headers but no sources) becomes INTERFACE and must
-    # never receive the dummy.cpp placeholder, which would flip it to STATIC and change
-    # its usage-requirement semantics (see issue #7).
-    if(NOT sources AND headers)
+    # A library that exposes public files and has no private translation unit to compile is
+    # header-only, and must never receive the dummy.cpp placeholder, which would flip it to
+    # STATIC and change its usage-requirement semantics (see issue #7). A private header does
+    # not make a library compiled -- there is nothing to compile -- so a header-only library
+    # keeps its detail headers under PRIVATE without changing kind.
+    _targets_any_translation_unit(has_translation_unit ${private_files})
+    if(public_files AND NOT has_translation_unit)
       add_library(${args_TARGET} INTERFACE)
       set(_is_interface_library TRUE)
     else()
-      # A source-less, header-less library (e.g. a codegen STATIC target whose translation
-      # units are produced by a custom command) still needs one real TU to archive; inject
-      # the shipped placeholder for it. Header-only libraries never reach this branch, so
-      # they never gain the dummy TU.
-      if(NOT sources)
+      # A library with no files at all (e.g. a codegen STATIC target whose translation units
+      # are produced by a custom command) still needs one real TU to archive; inject the
+      # shipped placeholder for it. Header-only libraries never reach this branch, so they
+      # never gain the dummy TU.
+      if(NOT private_files)
         _targets_dummy_source(dummy_file)
-        list(APPEND sources "${dummy_file}")
+        list(APPEND private_files "${dummy_file}")
         source_group("CMake Rules" FILES "${dummy_file}")
       endif()
-      add_library(${args_TARGET} ${library_type} ${sources} ${headers})
+      add_library(${args_TARGET} ${library_type} ${private_files} ${public_files})
       set(_is_interface_library FALSE)
     endif()
   elseif(args_TYPE STREQUAL "EXECUTABLE")
@@ -539,14 +689,14 @@ function(cpp_target)
         "cpp_target: EXPORT_HEADER and WINDOWS_EXPORT_ALL_SYMBOLS apply only to libraries, "
         "not executables.")
     endif()
-    # An executable with no sources still needs a translation unit to configure; give it
-    # the same placeholder fallback as source-less libraries (see issue #7).
-    if(NOT sources)
+    # An executable with no private files still needs a translation unit to configure; give
+    # it the same placeholder fallback as file-less libraries (see issue #7).
+    if(NOT private_files)
       _targets_dummy_source(dummy_file)
-      list(APPEND sources "${dummy_file}")
+      list(APPEND private_files "${dummy_file}")
       source_group("CMake Rules" FILES "${dummy_file}")
     endif()
-    add_executable(${args_TARGET} ${sources} ${headers})
+    add_executable(${args_TARGET} ${private_files} ${public_files})
     set(_is_interface_library FALSE)
   else()
     message(FATAL_ERROR "cpp_target: Invalid TYPE '${args_TYPE}'. Must be LIBRARY or EXECUTABLE")
@@ -682,10 +832,10 @@ function(cpp_target)
     if(ignored_args)
       string(REPLACE ";" ", " ignored_args "${ignored_args}")
       message(WARNING
-        "cpp_target: '${args_TARGET}' is a header-only INTERFACE library (HEADERS but no "
-        "SOURCES); the following argument(s) only apply to a compiled target and were "
-        "ignored: ${ignored_args}. An INTERFACE library has no private compile step and "
-        "produces no built artifact.")
+        "cpp_target: '${args_TARGET}' is a header-only INTERFACE library (public files, no "
+        "private translation unit); the following argument(s) only apply to a compiled "
+        "target and were ignored: ${ignored_args}. An INTERFACE library has no private "
+        "compile step and produces no built artifact.")
     endif()
   else()
     # Regular libraries and executables

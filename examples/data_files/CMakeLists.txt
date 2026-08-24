@@ -15,11 +15,11 @@ project(DataFilesExample VERSION 1.0.0 LANGUAGES CXX)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../cmake")
 include(Targets)
 
-# The DATA entry is resolved relative to the calling directory (like SOURCES) and staged as
+# The DATA entry is resolved relative to the calling directory (like a PRIVATE file) and staged as
 # "message.txt" next to DataApp's executable.
 cpp_binary(
     TARGET DataApp
-    SOURCES src/main.cpp
+    SOURCES PRIVATE src/main.cpp
     DATA data/message.txt
     CXX_STANDARD 17
 )

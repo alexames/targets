@@ -12,9 +12,10 @@ include(Targets)
 cpp_library(
     TARGET MathLib
     SOURCES
-        src/calculator.cpp
-    HEADERS
-        mathlib/calculator.h
+        PUBLIC
+            mathlib/calculator.h
+        PRIVATE
+            src/calculator.cpp
     INCLUDES
         PUBLIC
             include/

@@ -21,7 +21,8 @@ embed_binary(
 cpp_binary(
     TARGET EmbedBinaryDemo
     SOURCES
-        src/main.cpp
+        PRIVATE
+            src/main.cpp
     DEPENDENCIES
         PRIVATE
             EmbeddedAssets

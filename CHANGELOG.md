@@ -7,8 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `SOURCES` now accepts `PUBLIC` and `PRIVATE` groups, the grammar every other list argument
+  already uses. `PUBLIC` entries are the target's interface and resolve against `HEADER_DIR`;
+  `PRIVATE` entries are its implementation and resolve against `SOURCE_DIR`; platform
+  sentinels nest inside a visibility group, as they do for `DEPENDENCIES`. This is the split
+  `SOURCES` and `HEADERS` already were -- the two lists differed by base directory, and those
+  base directories are the private and public roots -- now spelled so that it says so, which
+  is what stops a private header being filed under `HEADERS` and resolved against the wrong
+  root ([#66]).
+- `TARGETS_WARN_ALL_LEGACY_SOURCES` reports every call still on the deprecated spelling
+  instead of only the first of a configure, naming the `CMakeLists.txt` lines left to
+  migrate ([#66]).
+
 ### Changed
 
+- Whether a library is header-only is now decided by whether any `PRIVATE` entry is a
+  translation unit, rather than by whether `SOURCES` was given at all. A library with public
+  files that lists private headers and no source file is header-only; before, the private
+  header made it a compiled library with nothing to compile, which CMake then failed to give
+  a link language.
+  Every other shape is unchanged, including the file-less library that gets the `dummy.cpp`
+  placeholder ([#66]).
 - `targets_enable_compiler_cache()` now reports a missing cache binary with a `WARNING`
   instead of a `STATUS` message, and the text says how to fix it. The caller asked for a
   cache and did not get one, the resulting build compiles everything uncached while still
@@ -17,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   common cause is a shell whose `PATH` predates the ccache install, which no amount of
   correct configuration on the machine fixes. `REQUIRED` still turns the same case into a
   `FATAL_ERROR` ([Composer#1367]).
+
+### Deprecated
+
+- A bare `SOURCES` list and the `HEADERS` argument. Both keep working and keep resolving
+  exactly what they resolve today; a call using either reports itself through CMake's own
+  deprecation machinery, so `-Wno-deprecated` silences it and `-Werror=deprecated` makes it a
+  configure error. Only the first such call of a configure is reported -- a project with
+  hundreds of targets would otherwise bury every other message -- and
+  `-DTARGETS_WARN_ALL_LEGACY_SOURCES=ON` names the rest. A `SOURCES` list is one spelling or
+  the other, decided by its first entry: opening bare and naming an access keyword later is a
+  configure error, as is passing grouped `SOURCES` and `HEADERS` in one call ([#66]).
 
 ### Fixed
 
@@ -188,6 +220,7 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#27]: https://github.com/alexames/targets/issues/27
 [#28]: https://github.com/alexames/targets/issues/28
 [#62]: https://github.com/alexames/targets/issues/62
+[#66]: https://github.com/alexames/targets/issues/66
 [#70]: https://github.com/alexames/targets/issues/70
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354

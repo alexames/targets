@@ -21,9 +21,10 @@ include(Targets)
 cpp_library(
     TARGET Widget
     SOURCES
-        src/widget.cpp
-    HEADERS
-        widget/widget.h
+        PUBLIC
+            widget/widget.h
+        PRIVATE
+            src/widget.cpp
     HEADER_DIR
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     INCLUDES
