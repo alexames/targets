@@ -36,9 +36,14 @@ if(NOT _ho_sources MATCHES "dummy\\.cpp")
     "header-only library must carry the dummy.cpp placeholder TU, got: '${_ho_sources}'")
 endif()
 
-# (2) Source-less, header-less library -> STATIC carrying the dummy.cpp placeholder TU.
+# (2) Source-less, header-less library -> STATIC carrying the dummy.cpp placeholder TU. The
+# public definition is what the library offers consumers; a library offering nothing at all is
+# rejected, and a usage requirement keeps this one file-less, which is the shape under test.
 cpp_library(
   TARGET GeneratedLib
+  DEFINITIONS
+    PUBLIC
+      GENERATED_LIB_AVAILABLE=1
 )
 
 get_target_property(_gen_type GeneratedLib TYPE)

@@ -1285,3 +1285,54 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
       -P "${CMAKE_CURRENT_LIST_DIR}/integration/codegen_target_defaults/effective_standard.cmake"
   )
 endif()
+
+# A library must offer consumers something: public files, public dependencies, or public usage
+# requirements. One with none of those and no translation unit of its own archives only the
+# placeholder and cannot affect a consumer, so it is rejected. Object code with no exposed
+# interface stays legal, so the private-translation-unit scenario pins that the rule does not
+# over-reach. Each public surface is asserted on its own because each is an independent path
+# to false-rejecting a working library.
+#
+# The rejection scenarios pair their PASS pattern with a FAIL pattern on a marker printed
+# after the rule returns: a FATAL_ERROR never reaches it, so a diagnostic demoted to a
+# warning fails the test instead of passing it.
+foreach(_scenario inert_empty inert_private_header)
+  add_test(
+    NAME cpp_library_${_scenario}
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=${_scenario}
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_public_surface"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_public_surface_${_scenario}"
+  )
+  set_tests_properties(cpp_library_${_scenario} PROPERTIES
+    PASS_REGULAR_EXPRESSION "offers consumers nothing"
+    FAIL_REGULAR_EXPRESSION "REACHED_END")
+endforeach()
+
+foreach(_case
+    "private_tu;PRIVATE_TU_OK"
+    "public_file;PUBLIC_FILE_OK"
+    "public_dependencies;PUBLIC_DEPENDENCIES_OK"
+    "public_includes;PUBLIC_INCLUDES_OK"
+    "public_definitions;PUBLIC_DEFINITIONS_OK"
+    "public_copts;PUBLIC_COPTS_OK"
+    "public_linkopts;PUBLIC_LINKOPTS_OK"
+    "platform_public_file;PLATFORM_PUBLIC_FILE_OK"
+    "platform_private_tu;PLATFORM_PRIVATE_TU_OK"
+    "legacy_headers;LEGACY_HEADERS_OK"
+    "platform_legacy_headers;PLATFORM_LEGACY_HEADERS_OK"
+    "private_dependencies;PRIVATE_DEPENDENCIES_OK"
+    "binary_nothing_public;BINARY_OK")
+  list(GET _case 0 _scenario)
+  list(GET _case 1 _marker)
+  add_test(
+    NAME cpp_library_${_scenario}
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=${_scenario}
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_library_public_surface"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_library_public_surface_${_scenario}"
+  )
+  set_tests_properties(cpp_library_${_scenario} PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_marker}"
+    FAIL_REGULAR_EXPRESSION "offers consumers nothing")
+endforeach()

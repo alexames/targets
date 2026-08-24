@@ -173,6 +173,33 @@ function(_targets_any_translation_unit OUT_VAR)
   set(${OUT_VAR} FALSE PARENT_SCOPE)
 endfunction()
 
+# Report in OUT_VAR whether any of the trailing entries names a file with a compilable
+# extension. Unlike the check above, this reads a RAW argument list -- one still holding the
+# grammar's own tokens, so visibility keywords, platform sentinels and the literal-escape
+# marker arrive mixed in with the file names. None of those carries an extension, so requiring
+# one is what keeps them out.
+#
+# Requiring an extension also means a source file named without one is not counted. That is
+# the trade: the alternative reads every grammar token as a file.
+#
+# OUT_VAR names the variable to set in the caller's scope, TRUE or FALSE.
+function(_targets_any_declared_translation_unit OUT_VAR)
+  set(header_extensions h hh hpp hxx h++ hp inl inc ipp tcc tpp)
+  foreach(entry IN LISTS ARGN)
+    get_filename_component(extension "${entry}" LAST_EXT)
+    if(extension STREQUAL "")
+      continue()
+    endif()
+    string(TOLOWER "${extension}" extension)
+    string(REGEX REPLACE "^\\." "" extension "${extension}")
+    if(NOT extension IN_LIST header_extensions)
+      set(${OUT_VAR} TRUE PARENT_SCOPE)
+      return()
+    endif()
+  endforeach()
+  set(${OUT_VAR} FALSE PARENT_SCOPE)
+endfunction()
+
 # Report that TARGET_NAME spells its file lists the deprecated way. SPELLING names what the
 # call wrote, for the diagnostic.
 #
@@ -643,6 +670,48 @@ function(cpp_target)
     endif()
     if(out_of_tree_headers)
       source_group("Generated Files" FILES ${out_of_tree_headers})
+    endif()
+  endif()
+
+  # A library exists to give the targets that link it something: files they can include,
+  # dependencies they inherit, or usage requirements applied to their own compile. One that
+  # offers none of those and has nothing of its own to compile archives only the placeholder
+  # translation unit, so linking it cannot affect a consumer in any configuration.
+  #
+  # Private translation units are a different case and stay legal: object code is a
+  # contribution in itself, whether or not any interface is exposed. Dependencies count
+  # whatever their visibility, because a static library's private dependency still reaches
+  # the consumer's link line as a LINK_ONLY usage requirement.
+  #
+  # Every check below reads the declared arguments rather than the parsed ones, so an entry
+  # that platform filtering removes here still counts. The author declared it; failing the
+  # target would reject a cross-platform declaration on every platform but one.
+  # An interface exposed only by setting an INTERFACE_* property through PROPERTIES is
+  # invisible to this, and the diagnostic says so.
+  if(args_TYPE STREQUAL "LIBRARY")
+    _targets_any_declared_translation_unit(_has_own_translation_unit ${args_SOURCES})
+    set(_offers_consumers_something FALSE)
+    # Every HEADERS entry is public; the keyword spelling carries its visibility instead.
+    # headers_given records that the list arrived non-empty, before platform filtering
+    # overwrote args_HEADERS in place.
+    if(headers_given OR args_DEPENDENCIES)
+      set(_offers_consumers_something TRUE)
+    endif()
+    foreach(_public_list IN ITEMS SOURCES INCLUDES DEFINITIONS COPTS LINKOPTS DEPENDENCIES)
+      if("PUBLIC" IN_LIST args_${_public_list})
+        set(_offers_consumers_something TRUE)
+      endif()
+    endforeach()
+    if(NOT _offers_consumers_something AND NOT _has_own_translation_unit)
+      message(FATAL_ERROR
+        "cpp_target: library '${args_TARGET}' offers consumers nothing. It declares no "
+        "public files under SOURCES, no DEPENDENCIES, no PUBLIC entry under INCLUDES, "
+        "DEFINITIONS, COPTS or LINKOPTS, and no source file to compile, so a target that "
+        "links it is unaffected. Give it a public file, a dependency, a PUBLIC entry in one "
+        "of those lists, or a source file. DATA does not count: it is staged beside this "
+        "target's own artifact rather than propagated to whatever links it. An interface "
+        "exposed only through PROPERTIES is not detected here; give the target a source "
+        "file if that is the intent.")
     endif()
   endif()
 

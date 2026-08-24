@@ -184,6 +184,44 @@ into a shared library. On Windows a library that exports nothing produces no imp
 so a consumer cannot link it; pass `WINDOWS_EXPORT_ALL_SYMBOLS` (or give the library a real
 exported symbol) if you mean to link a header-only SHARED library there.
 
+#### A library must offer consumers something
+
+A library exists to give the targets that link it something: public files, public
+dependencies, or public usage requirements applied to whoever depends on it. `cpp_library`
+rejects a declaration with none of those and no source file of its own, because such a target
+archives only the placeholder translation unit and linking it cannot affect a consumer in any
+configuration:
+
+```cmake
+# Configure-time error: nothing exposed, nothing to compile.
+cpp_library(TARGET Nothing)
+```
+
+Any one of these satisfies the rule: a `PUBLIC` entry under `SOURCES`, any `DEPENDENCIES`
+entry whatever its visibility, or a `PUBLIC` entry under `INCLUDES`, `DEFINITIONS`, `COPTS`
+or `LINKOPTS`. A private dependency counts because a static library's private dependency
+still reaches the consumer's link line. A library that only
+bundles other libraries, or only pushes a define into whatever links it, is legitimate and
+needs no files:
+
+```cmake
+cpp_library(
+    TARGET TracingEnabled
+    DEFINITIONS
+        PUBLIC
+            APP_TRACING=1
+)
+```
+
+A library with private translation units and no exposed interface is **not** rejected. Its
+object code is a contribution in itself — symbols may be declared by another target's header,
+or registered by a static initializer — so having no interface is a legitimate shape.
+
+A `PUBLIC` entry is recognized by the keyword rather than by what survives platform
+filtering, so a declaration whose only public entry applies to one platform is accepted
+everywhere. An interface exposed only by setting an `INTERFACE_*` property through
+`PROPERTIES` is not detected; give such a target a source file.
+
 #### SHARED libraries on Windows
 
 A SHARED library needs its symbols exported and its DLL staged next to any executable that

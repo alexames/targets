@@ -7,4 +7,7 @@
 
 cpp_library(
   TARGET HelperLib
+  DEFINITIONS
+    PUBLIC
+      HELPER_LIB_AVAILABLE=1
 )

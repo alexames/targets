@@ -74,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   common cause is a shell whose `PATH` predates the ccache install, which no amount of
   correct configuration on the machine fixes. `REQUIRED` still turns the same case into a
   `FATAL_ERROR` ([Composer#1367]).
+- A library must offer consumers something. One that declares no public files, no
+  dependencies, no `PUBLIC` entry under `INCLUDES`, `DEFINITIONS`, `COPTS` or `LINKOPTS`, and
+  no source file of its own is now a configure error: it archives only the placeholder
+  translation unit, so a target that links it is unaffected. Two shapes stay legal because
+  they do reach a consumer -- private translation units, whose object code is a contribution
+  in itself, and dependencies of any visibility, since a static library's private dependency
+  still arrives on the consumer's link line. Every test reads the declared arguments rather
+  than the platform-filtered result, so a cross-platform declaration is accepted on every
+  platform. This can reject a declaration that configured before, so it warrants a minor
+  version bump ([#82]).
 
 ### Deprecated
 
@@ -265,6 +275,7 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#66]: https://github.com/alexames/targets/issues/66
 [#70]: https://github.com/alexames/targets/issues/70
 [#79]: https://github.com/alexames/targets/issues/79
+[#82]: https://github.com/alexames/targets/issues/82
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355
