@@ -33,10 +33,9 @@ protobuf_cpp_library(
 # A small consumer that round-trips a generated message.
 cpp_binary(
     TARGET AddressBookApp
-    SOURCES PRIVATE src/main.cpp
+    SOURCES src/main.cpp
     DEPENDENCIES
-        PRIVATE
-            AddressBookProtos
+        AddressBookProtos
     CXX_STANDARD 17
 )
 

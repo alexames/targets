@@ -21,11 +21,9 @@ embed_binary(
 cpp_binary(
     TARGET EmbedBinaryDemo
     SOURCES
-        PRIVATE
-            src/main.cpp
+        src/main.cpp
     DEPENDENCIES
-        PRIVATE
-            EmbeddedAssets
+        EmbeddedAssets
     CXX_STANDARD 17
 )
 

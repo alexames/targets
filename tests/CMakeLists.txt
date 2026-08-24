@@ -38,10 +38,12 @@ add_test(
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_test_lazy_gtest"
 )
 
-# Argument validation (regression tests for issue #4). Values placed before the
-# first PUBLIC/PRIVATE keyword, and unknown/misspelled keywords, must produce a
-# FATAL_ERROR rather than being silently dropped. The negative scenarios pass iff
-# the expected diagnostic is emitted; the "valid" scenario must configure cleanly.
+# Argument validation for a library, whose every visibility-taking list requires the keyword.
+# Values placed before the first PUBLIC/PRIVATE keyword, and unknown or misspelled keywords,
+# must produce a FATAL_ERROR rather than being silently dropped. Each rejection scenario halts
+# on its own "was accepted" message if the call goes through, and the FAIL expression matches
+# that: a PASS expression alone makes CTest ignore the exit code, so a diagnostic demoted to a
+# warning would otherwise still print the wording the PASS expression looks for.
 add_test(
   NAME cpp_target_pre_keyword_rejected
   COMMAND "${CMAKE_COMMAND}"
@@ -50,7 +52,9 @@ add_test(
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_pre_keyword"
 )
 set_tests_properties(cpp_target_pre_keyword_rejected PROPERTIES
-  PASS_REGULAR_EXPRESSION "must be grouped under PUBLIC or PRIVATE")
+  PASS_REGULAR_EXPRESSION "must be grouped under PUBLIC or PRIVATE"
+  FAIL_REGULAR_EXPRESSION "was[ 	
+]+accepted")
 
 add_test(
   NAME cpp_target_unknown_arg_rejected
@@ -60,8 +64,13 @@ add_test(
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_unknown_arg"
 )
 set_tests_properties(cpp_target_unknown_arg_rejected PROPERTIES
-  PASS_REGULAR_EXPRESSION "unrecognized argument")
+  PASS_REGULAR_EXPRESSION "unrecognized argument"
+  FAIL_REGULAR_EXPRESSION "was[ 	
+]+accepted")
 
+# The fully-qualified form configures cleanly and splits visibility as declared. Every
+# assertion in that scenario names it ("valid: ..."), which its own halt does not, so the FAIL
+# expression tells a tripped assertion from the halt the PASS expression is looking for.
 add_test(
   NAME cpp_target_valid_visibility
   COMMAND "${CMAKE_COMMAND}"
@@ -70,7 +79,8 @@ add_test(
     -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_valid"
 )
 set_tests_properties(cpp_target_valid_visibility PROPERTIES
-  PASS_REGULAR_EXPRESSION "VALID_OK")
+  PASS_REGULAR_EXPRESSION "VALID_OK"
+  FAIL_REGULAR_EXPRESSION "valid:")
 
 # The banner message(DEPRECATION) prints. Matching the banner rather than the message text
 # is what proves a report is the kind -Werror=deprecated promotes to a configure error; the
@@ -163,18 +173,6 @@ set_tests_properties(cpp_target_sources_grouped PROPERTIES
   PASS_REGULAR_EXPRESSION "GROUPED_SOURCES_OK"
   FAIL_REGULAR_EXPRESSION "sources_grouped:;${_targets_deprecation_banner}")
 
-# One grammar everywhere: an executable takes PUBLIC file entries with no diagnostic of its
-# own, and a source file is as legal under PUBLIC as a header is.
-add_test(
-  NAME cpp_target_sources_public_on_executable
-  COMMAND "${CMAKE_COMMAND}"
-    -DSCENARIO=sources_public_on_executable
-    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_arg_validation"
-    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_arg_validation_public_on_exe"
-)
-set_tests_properties(cpp_target_sources_public_on_executable PROPERTIES
-  PASS_REGULAR_EXPRESSION "PUBLIC_ON_EXECUTABLE_OK"
-  FAIL_REGULAR_EXPRESSION "sources_public_on_executable:;${_targets_deprecation_banner}")
 
 # Source grouping robustness (regression test for issue #6). A generated source/header in
 # an out-of-source build tree (outside SOURCE_DIR/HEADER_DIR) must not fail configuration:
@@ -1336,3 +1334,114 @@ foreach(_case
     PASS_REGULAR_EXPRESSION "${_marker}"
     FAIL_REGULAR_EXPRESSION "offers consumers nothing")
 endforeach()
+
+# Leaf targets imply PRIVATE. Nothing links a cpp_binary or a cpp_test, so every entry of a
+# visibility-taking argument is private there: a bare list is the ordinary spelling, an
+# explicit PRIVATE stays legal, and PUBLIC is rejected. Each of the six arguments is
+# registered on its own, because each reaches the target through a different command and one
+# of them taking the public path would put a leaf target's usage requirements where nothing
+# reads them.
+#
+# The library scenarios are the other half of the claim: a bare list is still a configure
+# error there, so the implied-private rule reached leaf targets and nothing else.
+set(_targets_leaf_rejections
+  "groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+  "must[ \t\r\n]+be[ \t\r\n]+grouped[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+  "opens[ \t\r\n]+with[ \t\r\n]+the[ \t\r\n]+bare[ \t\r\n]+entry")
+
+# An accepting scenario fails on a tripped assertion, on any of the visibility rejections, and
+# on the deprecation banner -- a bare list is this grammar's ordinary spelling on a leaf
+# target, not the deprecated one a library's bare SOURCES list is.
+set(_targets_leaf_accept_failures
+  "LEAF_ASSERT;${_targets_leaf_rejections};${_targets_deprecation_banner}")
+
+foreach(_case
+    "sources_bare_binary;SOURCES_BARE_BINARY_OK"
+    "includes_bare_binary;INCLUDES_BARE_BINARY_OK"
+    "definitions_bare_binary;DEFINITIONS_BARE_BINARY_OK"
+    "copts_bare_binary;COPTS_BARE_BINARY_OK"
+    "linkopts_bare_binary;LINKOPTS_BARE_BINARY_OK"
+    "dependencies_bare_binary;DEPENDENCIES_BARE_BINARY_OK"
+    "sources_bare_test;SOURCES_BARE_TEST_OK"
+    "includes_bare_test;INCLUDES_BARE_TEST_OK"
+    "definitions_bare_test;DEFINITIONS_BARE_TEST_OK"
+    "copts_bare_test;COPTS_BARE_TEST_OK"
+    "linkopts_bare_test;LINKOPTS_BARE_TEST_OK"
+    "dependencies_bare_test;DEPENDENCIES_BARE_TEST_OK"
+    "private_spelled_binary;PRIVATE_SPELLED_BINARY_OK"
+    "private_spelled_test;PRIVATE_SPELLED_TEST_OK")
+  list(GET _case 0 _scenario)
+  list(GET _case 1 _marker)
+  add_test(
+    NAME cpp_target_leaf_${_scenario}
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=${_scenario}
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_implied_private"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_implied_private_${_scenario}"
+  )
+  set_tests_properties(cpp_target_leaf_${_scenario} PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_marker}"
+    FAIL_REGULAR_EXPRESSION "${_targets_leaf_accept_failures}")
+endforeach()
+
+# A rejecting scenario halts on ACCEPTED when the call it makes goes through, and the FAIL
+# expression matches that. A PASS expression alone makes CTest ignore the exit code, so a
+# FATAL_ERROR demoted to a warning would print the wording the PASS expression looks for and
+# pass -- and whether these diagnostics are errors is the whole of what is being tested.
+foreach(_case
+    "sources_public_binary;groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "includes_public_binary;groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "definitions_public_binary;groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "copts_public_binary;groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "linkopts_public_binary;groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "dependencies_public_binary;groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "dependencies_public_test;groups[ \t\r\n]+entries[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "bare_then_private_binary;entry[ \t\r\n]+on[ \t\r\n]+an[ \t\r\n]+executable[ \t\r\n]+is[ \t\r\n]+private"
+    "bare_then_private_dependencies_binary;entry[ \t\r\n]+on[ \t\r\n]+an[ \t\r\n]+executable[ \t\r\n]+is[ \t\r\n]+private"
+    "includes_bare_library;must[ \t\r\n]+be[ \t\r\n]+grouped[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "definitions_bare_library;must[ \t\r\n]+be[ \t\r\n]+grouped[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "copts_bare_library;must[ \t\r\n]+be[ \t\r\n]+grouped[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "linkopts_bare_library;must[ \t\r\n]+be[ \t\r\n]+grouped[ \t\r\n]+under[ \t\r\n]+PUBLIC"
+    "dependencies_bare_library;must[ \t\r\n]+be[ \t\r\n]+grouped[ \t\r\n]+under[ \t\r\n]+PUBLIC")
+  list(GET _case 0 _scenario)
+  list(GET _case 1 _diagnostic)
+  add_test(
+    NAME cpp_target_leaf_${_scenario}
+    COMMAND "${CMAKE_COMMAND}"
+      -DSCENARIO=${_scenario}
+      -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_implied_private"
+      -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_implied_private_${_scenario}"
+  )
+  set_tests_properties(cpp_target_leaf_${_scenario} PROPERTIES
+    PASS_REGULAR_EXPRESSION "${_diagnostic}"
+    FAIL_REGULAR_EXPRESSION "ACCEPTED")
+endforeach()
+
+# HEADERS is the deprecated spelling of SOURCES PUBLIC and stays accepted on every rule. A
+# leaf target has no public SOURCES group for it to collide with, so grouped SOURCES beside
+# HEADERS -- two spellings of one list on a library, and rejected there -- is a plain
+# declaration here, and that library rejection joins the FAIL expression to say so. Two tests
+# read the one scenario, because the deprecation report and the resolved file list are
+# separate claims.
+add_test(
+  NAME cpp_target_leaf_headers_with_grouped_sources
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=headers_with_grouped_sources_binary
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_implied_private"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_implied_private_headers_grouped"
+)
+set_tests_properties(cpp_target_leaf_headers_with_grouped_sources PROPERTIES
+  PASS_REGULAR_EXPRESSION "HEADERS_WITH_GROUPED_SOURCES_OK"
+  FAIL_REGULAR_EXPRESSION
+    "LEAF_ASSERT;${_targets_leaf_rejections};two[ \t\r\n]+spellings[ \t\r\n]+of[ \t\r\n]+the[ \t\r\n]+same")
+
+add_test(
+  NAME cpp_target_leaf_headers_deprecated
+  COMMAND "${CMAKE_COMMAND}"
+    -DSCENARIO=headers_with_grouped_sources_binary
+    -S "${CMAKE_CURRENT_LIST_DIR}/integration/cpp_target_implied_private"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/integration/cpp_target_implied_private_headers_deprecated"
+)
+set_tests_properties(cpp_target_leaf_headers_deprecated PROPERTIES
+  PASS_REGULAR_EXPRESSION "${_targets_deprecation_banner}[^\n]*cpp_target[.]cmake"
+  FAIL_REGULAR_EXPRESSION "LEAF_ASSERT;${_targets_leaf_rejections}")

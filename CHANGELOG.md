@@ -74,6 +74,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   common cause is a shell whose `PATH` predates the ccache install, which no amount of
   correct configuration on the machine fixes. `REQUIRED` still turns the same case into a
   `FATAL_ERROR` ([Composer#1367]).
+- `cpp_binary` and `cpp_test` imply `PRIVATE` on every list that takes a visibility --
+  `SOURCES`, `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`, `COPTS` and `LINKOPTS`. Nothing links
+  a leaf target, so it has no consumer for a public entry to reach, and the keyword could
+  only ever take one value. A test lists its sources and its dependencies and stops:
+
+  ```cmake
+  cpp_test(
+      TARGET WidgetTest
+      SOURCES
+          WidgetTest.cpp
+      DEPENDENCIES
+          MyProject::UI::Widgets
+  )
+  ```
+
+  An explicit `PRIVATE` ahead of the whole list stays legal, so one spelling reads on both a
+  library and a leaf target. `PUBLIC` on a leaf target is now a configure error rather than a
+  keyword that parses and means nothing: it named an interface no target could consume, and
+  under `SOURCES` it also moved the base directory to `HEADER_DIR`, silently, for files that
+  reach no one. A leaf target's files all resolve against `SOURCE_DIR` now, and `HEADER_DIR`
+  is still on its own include path. A list that opens bare and names `PRIVATE` partway
+  through is rejected, as its library counterpart already was: the entries ahead of the
+  keyword have no reading that keeps them. This can reject a declaration that configured
+  before, so it warrants a minor version bump ([#67]).
+
+  `cpp_library` is unchanged: every entry still requires its keyword, an entry before the
+  first one is still an error, and a bare `SOURCES` list is still the deprecated spelling. A
+  bare `SOURCES` list on a leaf target is not that spelling and reports nothing ([#67]).
 - A library must offer consumers something. One that declares no public files, no
   dependencies, no `PUBLIC` entry under `INCLUDES`, `DEFINITIONS`, `COPTS` or `LINKOPTS`, and
   no source file of its own is now a configure error: it archives only the placeholder
@@ -273,6 +301,7 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#28]: https://github.com/alexames/targets/issues/28
 [#62]: https://github.com/alexames/targets/issues/62
 [#66]: https://github.com/alexames/targets/issues/66
+[#67]: https://github.com/alexames/targets/issues/67
 [#70]: https://github.com/alexames/targets/issues/70
 [#79]: https://github.com/alexames/targets/issues/79
 [#82]: https://github.com/alexames/targets/issues/82

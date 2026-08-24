@@ -80,10 +80,11 @@ endfunction()
 
 # Split a visibility-taking argument's values into PUBLIC_<VAR_NAME> and
 # PRIVATE_<VAR_NAME> (set in the caller's scope). RULE names the calling rule for
-# diagnostics. Every value must appear under a PUBLIC or PRIVATE keyword: entries
-# placed before the first access keyword would otherwise be dropped silently, so
-# they are rejected with a hard error (see issue #4).
-function(_targets_parse_access_specifier RULE VAR_NAME)
+# diagnostics, VAR_NAME the argument, and the entries to split are the trailing arguments.
+# Every value must appear under a PUBLIC or PRIVATE keyword: entries placed before the
+# first access keyword would otherwise be dropped silently, so they are rejected with a
+# hard error. This is the grammar a library takes, where both visibilities are meaningful.
+function(_targets_parse_access_groups RULE VAR_NAME)
   set(options)
   set(one_value_args)
   set(multi_value_args PUBLIC PRIVATE)
@@ -103,22 +104,98 @@ function(_targets_parse_access_specifier RULE VAR_NAME)
   set(PRIVATE_${VAR_NAME} ${ACCESS_SPECIFIER_PRIVATE} PARENT_SCOPE)
 endfunction()
 
-# Split a file-list argument that accepts either the visibility-grouped spelling or the
-# deprecated bare list into PUBLIC_<VAR_NAME>, PRIVATE_<VAR_NAME> and <VAR_NAME>_SPELLING
-# (set in the caller's scope). RULE names the calling rule for diagnostics, VAR_NAME the
-# argument, and the entries to split are the trailing arguments. <VAR_NAME>_SPELLING reads
-# "grouped", "legacy" or "none", so the caller can report the deprecated spellings.
+# Split a leaf target's visibility-taking argument into PRIVATE_<VAR_NAME>, leaving
+# PUBLIC_<VAR_NAME> empty (both set in the caller's scope). RULE names the calling rule for
+# diagnostics, VAR_NAME the argument, and the entries to split are the trailing arguments.
 #
-# The first entry alone decides. Opening with PUBLIC or PRIVATE selects the grouped
-# spelling, handed to _targets_parse_access_specifier; any other opening entry is the bare
-# list, every entry of which is private.
+# Nothing links an executable, so it has no consumer for a public entry to reach and every
+# entry is private. The keyword is therefore implied and a bare list is the ordinary
+# spelling; PUBLIC is rejected, because on a leaf target it can only name an interface that
+# nothing can use.
 #
-# A list that opens bare and names PUBLIC or PRIVATE later is rejected here. Read as a bare
-# list the keyword becomes a file name; read as a grouped one the entries ahead of it are
-# exactly what _targets_parse_access_specifier exists to reject -- but it never sees them,
+# A leading PRIVATE stays legal, so one grammar reads on both a library and a leaf target. A
+# list that opens bare and names PRIVATE later is rejected: the entries ahead of the keyword
+# have no reading that keeps them, as in the grouped grammar.
+function(_targets_parse_implied_private RULE VAR_NAME)
+  set(entries ${ARGN})
+
+  if("PUBLIC" IN_LIST entries)
+    set(base_dir_note "")
+    if(VAR_NAME STREQUAL "SOURCES")
+      string(APPEND base_dir_note
+        " Every file of a leaf target then resolves against SOURCE_DIR, and HEADER_DIR"
+        " stays on its include path.")
+    endif()
+    message(FATAL_ERROR
+      "${RULE}: ${VAR_NAME} groups entries under PUBLIC on an executable. Nothing links a "
+      "cpp_binary or cpp_test, so a public entry reaches no consumer. Every entry on those "
+      "rules is private and the keyword is implied: write the whole list bare, or put "
+      "PRIVATE ahead of all of it.${base_dir_note}")
+  endif()
+
+  list(LENGTH entries entry_count)
+  if(entry_count EQUAL 0)
+    set(PUBLIC_${VAR_NAME} "" PARENT_SCOPE)
+    set(PRIVATE_${VAR_NAME} "" PARENT_SCOPE)
+    return()
+  endif()
+
+  list(GET entries 0 first_entry)
+  if(first_entry STREQUAL "PRIVATE")
+    _targets_parse_access_groups("${RULE}" ${VAR_NAME} ${entries})
+    set(PUBLIC_${VAR_NAME} "" PARENT_SCOPE)
+    set(PRIVATE_${VAR_NAME} "${PRIVATE_${VAR_NAME}}" PARENT_SCOPE)
+    return()
+  endif()
+
+  if("PRIVATE" IN_LIST entries)
+    message(FATAL_ERROR
+      "${RULE}: ${VAR_NAME} opens with the bare entry '${first_entry}' and names PRIVATE "
+      "later, so the entries ahead of that keyword would be dropped. Every entry on an "
+      "executable is private: write the whole list bare, or put PRIVATE ahead of all of it.")
+  endif()
+
+  set(PUBLIC_${VAR_NAME} "" PARENT_SCOPE)
+  set(PRIVATE_${VAR_NAME} "${entries}" PARENT_SCOPE)
+endfunction()
+
+# Split a visibility-taking argument under the grammar TYPE calls for, into PUBLIC_<VAR_NAME>
+# and PRIVATE_<VAR_NAME> (set in the caller's scope). RULE names the calling rule for
+# diagnostics, TYPE is LIBRARY or EXECUTABLE, VAR_NAME the argument, and the entries to split
+# are the trailing arguments.
+#
+# A library requires every entry under a PUBLIC or PRIVATE keyword. An executable takes a
+# bare list, all of it private, and rejects PUBLIC.
+function(_targets_parse_access_specifier RULE TYPE VAR_NAME)
+  if(TYPE STREQUAL "EXECUTABLE")
+    _targets_parse_implied_private("${RULE}" ${VAR_NAME} ${ARGN})
+  else()
+    _targets_parse_access_groups("${RULE}" ${VAR_NAME} ${ARGN})
+  endif()
+  set(PUBLIC_${VAR_NAME} "${PUBLIC_${VAR_NAME}}" PARENT_SCOPE)
+  set(PRIVATE_${VAR_NAME} "${PRIVATE_${VAR_NAME}}" PARENT_SCOPE)
+endfunction()
+
+# Split a file-list argument into PUBLIC_<VAR_NAME>, PRIVATE_<VAR_NAME> and
+# <VAR_NAME>_SPELLING (set in the caller's scope). RULE names the calling rule for
+# diagnostics, TYPE is LIBRARY or EXECUTABLE, VAR_NAME the argument, and the entries to
+# split are the trailing arguments. <VAR_NAME>_SPELLING reads "grouped", "legacy", "leaf" or
+# "none", so the caller can report the deprecated spellings.
+#
+# On an executable the whole list is private, however it is spelled, and the spelling reads
+# "leaf": a bare list is the ordinary form there rather than the deprecated one, so it is not
+# reported.
+#
+# On a library the first entry alone decides. Opening with PUBLIC or PRIVATE selects the
+# grouped spelling; any other opening entry is the deprecated bare list, every entry of which
+# is private.
+#
+# A library list that opens bare and names PUBLIC or PRIVATE later is rejected here. Read as
+# a bare list the keyword becomes a file name; read as a grouped one the entries ahead of it
+# are exactly what _targets_parse_access_groups exists to reject -- but it never sees them,
 # because cmake_parse_arguments leaves nothing unparsed once the first entry is a keyword.
 # This check is the only thing standing between that shape and a silent misreading.
-function(_targets_parse_source_visibility RULE VAR_NAME)
+function(_targets_parse_source_visibility RULE TYPE VAR_NAME)
   set(entries ${ARGN})
   list(LENGTH entries entry_count)
   if(entry_count EQUAL 0)
@@ -128,9 +205,17 @@ function(_targets_parse_source_visibility RULE VAR_NAME)
     return()
   endif()
 
+  if(TYPE STREQUAL "EXECUTABLE")
+    _targets_parse_implied_private("${RULE}" ${VAR_NAME} ${entries})
+    set(PUBLIC_${VAR_NAME} "" PARENT_SCOPE)
+    set(PRIVATE_${VAR_NAME} "${PRIVATE_${VAR_NAME}}" PARENT_SCOPE)
+    set(${VAR_NAME}_SPELLING "leaf" PARENT_SCOPE)
+    return()
+  endif()
+
   list(GET entries 0 first_entry)
   if(first_entry STREQUAL "PUBLIC" OR first_entry STREQUAL "PRIVATE")
-    _targets_parse_access_specifier("${RULE}" ${VAR_NAME} ${entries})
+    _targets_parse_access_groups("${RULE}" ${VAR_NAME} ${entries})
     set(PUBLIC_${VAR_NAME} "${PUBLIC_${VAR_NAME}}" PARENT_SCOPE)
     set(PRIVATE_${VAR_NAME} "${PRIVATE_${VAR_NAME}}" PARENT_SCOPE)
     set(${VAR_NAME}_SPELLING "grouped" PARENT_SCOPE)
@@ -486,13 +571,16 @@ function(cpp_target)
     WARNINGS                  # Opt-in warning level: off | default | strict (issue #23)
   )
   set(multi_value_args
-    SOURCES                   # Files (with PUBLIC/PRIVATE), or a deprecated bare list
+    # SOURCES, INCLUDES, DEFINITIONS, DEPENDENCIES, COPTS and LINKOPTS take PUBLIC/PRIVATE on
+    # a library. On an executable every entry is private, so the keyword is implied there and
+    # PUBLIC is rejected.
+    SOURCES                   # Files (a library also takes a deprecated bare list)
     HEADERS                   # Deprecated spelling of SOURCES PUBLIC
-    INCLUDES                  # Include directories (with PUBLIC/PRIVATE)
-    DEFINITIONS               # Compiler definitions (with PUBLIC/PRIVATE)
-    DEPENDENCIES              # Link libraries (with PUBLIC/PRIVATE)
-    COPTS                     # Per-target compile options (with PUBLIC/PRIVATE) (issue #27)
-    LINKOPTS                  # Per-target link options (with PUBLIC/PRIVATE) (issue #27)
+    INCLUDES                  # Include directories
+    DEFINITIONS               # Compiler definitions
+    DEPENDENCIES              # Link libraries
+    COPTS                     # Per-target compile options
+    LINKOPTS                  # Per-target link options
     DATA                      # Runtime data files staged next to the artifact (issue #27)
     PROPERTIES                # Additional CMake properties
     PRECOMPILE_HEADERS        # Headers to precompile
@@ -582,12 +670,15 @@ function(cpp_target)
 
   # Split the file lists by visibility. PUBLIC entries are the target's interface and
   # resolve against HEADER_DIR; PRIVATE entries are its implementation and resolve against
-  # SOURCE_DIR. SOURCES accepts either the grouped spelling or the deprecated bare list
-  # (entirely private); HEADERS is the deprecated spelling of the public group.
-  _targets_parse_source_visibility("cpp_target" SOURCES ${args_SOURCES})
+  # SOURCE_DIR. On a library SOURCES accepts either the grouped spelling or the deprecated
+  # bare list (entirely private); on an executable it is private throughout. HEADERS is the
+  # deprecated spelling of the public group and is accepted by every rule.
+  _targets_parse_source_visibility("cpp_target" "${args_TYPE}" SOURCES ${args_SOURCES})
 
-  # One call cannot use both spellings for its public files: the grouped SOURCES and HEADERS
-  # describe the same list, and nothing in the call says which the author meant to keep.
+  # One library call cannot use both spellings for its public files: the grouped SOURCES and
+  # HEADERS describe the same list, and nothing in the call says which the author meant to
+  # keep. An executable reaches neither spelling -- SOURCES has no public group there -- so
+  # its HEADERS collides with nothing.
   if(SOURCES_SPELLING STREQUAL "grouped" AND headers_given)
     message(FATAL_ERROR
       "cpp_target: '${args_TARGET}' groups SOURCES under PUBLIC/PRIVATE and also passes "
@@ -794,7 +885,7 @@ function(cpp_target)
   endif()
 
   # Add include directories
-  _targets_parse_access_specifier("cpp_target" INCLUDES ${args_INCLUDES})
+  _targets_parse_access_specifier("cpp_target" "${args_TYPE}" INCLUDES ${args_INCLUDES})
   _targets_parse_platforms(PUBLIC_INCLUDES ${PUBLIC_INCLUDES})
   _targets_parse_platforms(PRIVATE_INCLUDES ${PRIVATE_INCLUDES})
 
@@ -868,7 +959,7 @@ function(cpp_target)
   )
 
   # Add compiler definitions
-  _targets_parse_access_specifier("cpp_target" DEFINITIONS ${args_DEFINITIONS})
+  _targets_parse_access_specifier("cpp_target" "${args_TYPE}" DEFINITIONS ${args_DEFINITIONS})
   _targets_parse_platforms(PUBLIC_DEFINITIONS ${PUBLIC_DEFINITIONS})
   _targets_parse_platforms(PRIVATE_DEFINITIONS ${PRIVATE_DEFINITIONS})
   target_compile_definitions(
@@ -883,7 +974,7 @@ function(cpp_target)
   # requirements (also applied to consumers via INTERFACE_COMPILE_OPTIONS/LINK_OPTIONS);
   # PRIVATE entries apply only to this target's own build. Each visibility is applied only
   # when non-empty so an empty section never reaches the underlying command.
-  _targets_parse_access_specifier("cpp_target" COPTS ${args_COPTS})
+  _targets_parse_access_specifier("cpp_target" "${args_TYPE}" COPTS ${args_COPTS})
   _targets_parse_platforms(PUBLIC_COPTS ${PUBLIC_COPTS})
   _targets_parse_platforms(PRIVATE_COPTS ${PRIVATE_COPTS})
   if(PUBLIC_COPTS)
@@ -893,7 +984,7 @@ function(cpp_target)
     target_compile_options(${args_TARGET} PRIVATE ${PRIVATE_COPTS})
   endif()
 
-  _targets_parse_access_specifier("cpp_target" LINKOPTS ${args_LINKOPTS})
+  _targets_parse_access_specifier("cpp_target" "${args_TYPE}" LINKOPTS ${args_LINKOPTS})
   _targets_parse_platforms(PUBLIC_LINKOPTS ${PUBLIC_LINKOPTS})
   _targets_parse_platforms(PRIVATE_LINKOPTS ${PRIVATE_LINKOPTS})
   if(PUBLIC_LINKOPTS)
@@ -908,7 +999,7 @@ function(cpp_target)
   _targets_apply_common_target_defaults(${args_TARGET})
 
   # Add dependencies
-  _targets_parse_access_specifier("cpp_target" DEPENDENCIES ${args_DEPENDENCIES})
+  _targets_parse_access_specifier("cpp_target" "${args_TYPE}" DEPENDENCIES ${args_DEPENDENCIES})
   _targets_parse_platforms(PUBLIC_DEPENDENCIES ${PUBLIC_DEPENDENCIES})
   _targets_parse_platforms(PRIVATE_DEPENDENCIES ${PRIVATE_DEPENDENCIES})
   import_dependencies(${args_TARGET} "${PUBLIC_DEPENDENCIES}")

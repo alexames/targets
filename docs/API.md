@@ -316,12 +316,12 @@ Define a C++ executable target.
 ```cmake
 cpp_binary(
     TARGET <name>
-    [SOURCES <PUBLIC|PRIVATE> <file>...]
-    [INCLUDES <PUBLIC|PRIVATE> <dir>...]
-    [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
-    [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
-    [COPTS <PUBLIC|PRIVATE> <option>...]
-    [LINKOPTS <PUBLIC|PRIVATE> <option>...]
+    [SOURCES [PRIVATE] <file>...]
+    [INCLUDES [PRIVATE] <dir>...]
+    [DEFINITIONS [PRIVATE] <def>...]
+    [DEPENDENCIES [PRIVATE] <target>...]
+    [COPTS [PRIVATE] <option>...]
+    [LINKOPTS [PRIVATE] <option>...]
     [DATA <file-or-dir>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
@@ -338,6 +338,11 @@ cpp_binary(
 
 **Additional Parameters:**
 
+- **Visibility**: `PRIVATE` is implied and `PUBLIC` is rejected on every list above. Nothing
+  links an executable, so it has no consumer for a public entry to reach. Write the list
+  bare, or spell `PRIVATE` if you prefer it. Every file resolves against `SOURCE_DIR`;
+  `HEADER_DIR` stays on the target's own include path. See
+  [Access Specifiers](#access-specifiers).
 - **WORKING_DIRECTORY**: Sets the debugger working directory (Visual Studio, etc.)
 - **COMMAND_ARGUMENTS**: Sets the Visual Studio debugger's command-line (F5) arguments. This
   affects only the debugger, not `ctest`; for arguments passed to a test at run time use
@@ -354,13 +359,11 @@ cpp_binary(
 cpp_binary(
     TARGET MyApp
     SOURCES
-        PRIVATE
-            src/main.cpp
-            src/app.cpp
+        src/main.cpp
+        src/app.cpp
     DEPENDENCIES
-        PRIVATE
-            MyMathLib
-            spdlog::spdlog
+        MyMathLib
+        spdlog::spdlog
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
     CXX_STANDARD 20
 )
@@ -379,12 +382,12 @@ all link against the same `GTest::gtest_main`.
 ```cmake
 cpp_test(
     TARGET <name>
-    [SOURCES <PUBLIC|PRIVATE> <file>...]
-    [INCLUDES <PUBLIC|PRIVATE> <dir>...]
-    [DEFINITIONS <PUBLIC|PRIVATE> <def>...]
-    [DEPENDENCIES <PUBLIC|PRIVATE> <target>...]
-    [COPTS <PUBLIC|PRIVATE> <option>...]
-    [LINKOPTS <PUBLIC|PRIVATE> <option>...]
+    [SOURCES [PRIVATE] <file>...]
+    [INCLUDES [PRIVATE] <dir>...]
+    [DEFINITIONS [PRIVATE] <def>...]
+    [DEPENDENCIES [PRIVATE] <target>...]
+    [COPTS [PRIVATE] <option>...]
+    [LINKOPTS [PRIVATE] <option>...]
     [DATA <file-or-dir>...]
     [CXX_STANDARD <standard>]
     [FOLDER <path>]
@@ -398,8 +401,8 @@ cpp_test(
 )
 ```
 
-Accepts the full `cpp_binary()` grammar (including `DATA`, `COPTS`, `LINKOPTS`), plus the
-test-specific attributes below. Automatically links Google Test and registers tests with CTest
+Accepts the full `cpp_binary()` grammar (including `DATA`, `COPTS`, `LINKOPTS`) and its
+implied `PRIVATE`, plus the test-specific attributes below. Automatically links Google Test and registers tests with CTest
 via `gtest_discover_tests`.
 
 Enable testing at your **top-level** `CMakeLists.txt` with `enable_testing()` or, idiomatically, `include(CTest)`. `cpp_test()` does not call `enable_testing()` itself, because that command is directory-scoped and calling it from within the module (in whatever directory first includes Targets) can silently drop tests from `ctest`. `cpp_test()` honors the standard `BUILD_TESTING` option: when it is `OFF`, `cpp_test()` is a no-op — no target is created and Google Test is not acquired.
@@ -432,12 +435,10 @@ Enable testing at your **top-level** `CMakeLists.txt` with `enable_testing()` or
 cpp_test(
     TARGET TestMyMath
     SOURCES
-        PRIVATE
-            test/test_calculator.cpp
-            test/test_geometry.cpp
+        test/test_calculator.cpp
+        test/test_geometry.cpp
     DEPENDENCIES
-        PRIVATE
-            MyMathLib
+        MyMathLib
     DATA test/fixtures/
     SIZE medium
     LABELS unit math
@@ -813,20 +814,42 @@ is built standalone or embedded in a larger build via `add_subdirectory`/`FetchC
 
 ### Access Specifiers
 
-All functions support PUBLIC/PRIVATE access specifiers for:
-- **SOURCES**: The target's files
-- **INCLUDES**: Include directories
-- **DEFINITIONS**: Preprocessor definitions
-- **DEPENDENCIES**: Link dependencies
+Six list arguments carry a visibility: `SOURCES`, `INCLUDES`, `DEFINITIONS`, `DEPENDENCIES`,
+`COPTS`, and `LINKOPTS`.
 
 **PUBLIC**: Transitive - exported to targets that depend on this one
 **PRIVATE**: Non-transitive - only used when building this target
 
-The access keyword is **required**: every value of `SOURCES`, `INCLUDES`, `DEFINITIONS`,
-and `DEPENDENCIES` must appear under a `PUBLIC` or `PRIVATE` keyword. Values placed before
-the first keyword are rejected with a configure-time error rather than silently
-dropped. `SOURCES` also accepts a deprecated bare list; see
+**On `cpp_library` the keyword is required.** Every value must appear under a `PUBLIC` or a
+`PRIVATE` keyword; a value placed before the first keyword is a configure-time error rather
+than a silent drop. `SOURCES` also accepts a deprecated bare list; see
 [Source visibility (SOURCES)](#source-visibility-sources).
+
+**On `cpp_binary` and `cpp_test` `PRIVATE` is implied, and `PUBLIC` is a configure-time
+error.** Nothing links an executable, so a public entry has no consumer to reach: a public
+dependency, definition, include directory, or option would land on an interface nothing
+reads, and a public file would resolve against `HEADER_DIR` for no one's benefit. The whole
+list is private, so write it bare:
+
+```cmake
+cpp_test(
+    TARGET WidgetTest
+    SOURCES
+        WidgetTest.cpp
+    DEPENDENCIES
+        MyProject::UI::Widgets
+)
+```
+
+An explicit `PRIVATE` ahead of the whole list stays legal — redundant, but it means one
+spelling reads on both rules, so a declaration can move between them unchanged. What is
+rejected is a list that opens bare and names `PRIVATE` partway through: the entries ahead of
+that keyword have no reading that keeps them.
+
+A leaf target's files all resolve against `SOURCE_DIR`; `HEADER_DIR` is still on its own
+include path, so a header under `<dir>/Include` is reachable from its sources either way.
+`HEADERS`, the deprecated spelling of `SOURCES PUBLIC`, is accepted on every rule for as long
+as it lasts.
 
 ### Source visibility (SOURCES)
 
@@ -855,19 +878,19 @@ cpp_library(
   of the interface", not "not compiled".
 - A library is **header-only** when it has PUBLIC files and no PRIVATE
   translation unit. Private headers do not change that — there is nothing to compile.
-- On an executable (`cpp_binary`, `cpp_test`) PUBLIC is accepted with no diagnostic and
-  resolves the same way. An executable has no consumers, so the two groups differ only in
-  base directory there.
+- This grouping is the `cpp_library` grammar. On `cpp_binary` and `cpp_test` there is one
+  group: `PRIVATE` is implied, `PUBLIC` is rejected, and every file resolves against
+  `SOURCE_DIR`. See [Access Specifiers](#access-specifiers).
 - Platform sentinels nest *inside* a visibility group, exactly as they do for
   `DEPENDENCIES`. See [Platform-conditional entries](#platform-conditional-entries).
 
 #### Migrating from SOURCES / HEADERS
 
-The older spelling — a bare `SOURCES` list plus a separate `HEADERS` list — still works and
-is deprecated. It was already this same split under different names: `HEADERS` resolved
-against `HEADER_DIR` and `SOURCES` against `SOURCE_DIR`. So the migration is mechanical, and
-for a project whose libraries all have at least one source file nothing changes about any
-target:
+On a library, the older spelling — a bare `SOURCES` list plus a separate `HEADERS` list —
+still works and is deprecated. It was already this same split under different names:
+`HEADERS` resolved against `HEADER_DIR` and `SOURCES` against `SOURCE_DIR`. So the migration
+is mechanical, and for a project whose libraries all have at least one source file nothing
+changes about any target:
 
 ```cmake
 # Before                             # After
@@ -883,14 +906,19 @@ Existing `SOURCES` entries become `PRIVATE`, existing `HEADERS` entries become `
 
 Two rules keep a half-finished migration from configuring into something you did not mean:
 
-- **A `SOURCES` list is one spelling or the other, decided by its first entry.** Opening
-  with `PUBLIC` or `PRIVATE` selects the grouped form; anything else is the bare list.
-  Opening bare and naming an access keyword later is a configure-time error, because the
-  entries ahead of the keyword have no reading — under the bare one the keyword becomes a
-  file name, and under the grouped one they are exactly what the access-specifier check
+- **A library's `SOURCES` list is one spelling or the other, decided by its first entry.**
+  Opening with `PUBLIC` or `PRIVATE` selects the grouped form; anything else is the bare
+  list. Opening bare and naming an access keyword later is a configure-time error, because
+  the entries ahead of the keyword have no reading — under the bare one the keyword becomes
+  a file name, and under the grouped one they are exactly what the access-specifier check
   rejects.
-- **Grouped `SOURCES` and `HEADERS` in one call is a configure-time error.** They are two
-  spellings of the same public file list; move the `HEADERS` entries under `SOURCES PUBLIC`.
+- **Grouped `SOURCES` and `HEADERS` in one library call is a configure-time error.** They
+  are two spellings of the same public file list; move the `HEADERS` entries under
+  `SOURCES PUBLIC`. A leaf target's `SOURCES` has no public group, so the two do not
+  collide there.
+
+A bare `SOURCES` list on `cpp_binary` or `cpp_test` is not this deprecated spelling: it is
+the ordinary one, and reports nothing. Only `HEADERS` is deprecated on a leaf target.
 
 The deprecated spelling reports itself with CMake's own deprecation machinery, so
 `-Wno-deprecated` silences it and `-Werror=deprecated` turns it into a configure error. Only

@@ -70,7 +70,7 @@ if(SCENARIO STREQUAL "default_folder")
     TARGET DefaultFolderTest
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}"
     SOURCES "${_src}"
-    DEPENDENCIES PUBLIC SomeDep
+    DEPENDENCIES PRIVATE SomeDep
     PROPERTIES MY_CUSTOM_PROP custom_value
   )
   _expect_property(DefaultFolderTest FOLDER "Tests")
@@ -85,7 +85,7 @@ elseif(SCENARIO STREQUAL "falsey_folder")
     TARGET FalseyFolderTest
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}"
     SOURCES "${_src}"
-    DEPENDENCIES PUBLIC SomeDep
+    DEPENDENCIES PRIVATE SomeDep
     PROPERTIES MY_CUSTOM_PROP custom_value
     FOLDER 0
   )
@@ -100,8 +100,8 @@ elseif(SCENARIO STREQUAL "explicit_folder")
     TARGET ExplicitFolderTest
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}"
     SOURCES "${_src}"
-    DEFINITIONS PUBLIC SOME_MACRO=1
-    DEPENDENCIES PUBLIC SomeDep
+    DEFINITIONS PRIVATE SOME_MACRO=1
+    DEPENDENCIES PRIVATE SomeDep
     FOLDER "Custom/TestGroup"
     PROPERTIES MY_CUSTOM_PROP custom_value
   )
