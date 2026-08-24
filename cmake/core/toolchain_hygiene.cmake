@@ -90,10 +90,10 @@ function(_targets_apply_toolchain_hygiene)
       # MSVC AddressSanitizer is incompatible with the Debug runtime checks (/RTC1, part of
       # CMake's default CMAKE_CXX_FLAGS_DEBUG); cl.exe hard-errors (D8016) on that
       # combination. Edit-and-continue debug info (/ZI) is a second such conflict wherever
-      # cpp_target injects it, which is Debug with no compiler launcher configured. Gate the
-      # flag to non-Debug configurations so an opted-in Debug build is a clean no-op instead
-      # of a compile error -- honoring "no-op where unsupported" -- while Release /
-      # RelWithDebInfo get real ASan.
+      # cpp_target injects it, which is Debug with no compiler launcher configured and no
+      # whole-program optimization on the target. Gate the flag to non-Debug configurations
+      # so an opted-in Debug build is a clean no-op instead of a compile error -- honoring
+      # "no-op where unsupported" -- while Release / RelWithDebInfo get real ASan.
       target_compile_options(${h_TARGET} PRIVATE
         "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<CONFIG:Debug>>>:/fsanitize=address>")
     endif()
@@ -128,7 +128,9 @@ function(_targets_apply_toolchain_hygiene)
   # --- Link-time optimization (IPO) ------------------------------------------------------
   # Use CMake's INTERPROCEDURAL_OPTIMIZATION target property, gated on check_ipo_supported()
   # so it degrades to a warning where the toolchain cannot do it instead of failing the
-  # build.
+  # build. On MSVC the property also costs the target edit-and-continue debug info in Debug:
+  # cpp_target injects /ZI only where whole-program optimization is off, since cl.exe rejects
+  # /GL with /ZI.
   if(h_LTO)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_err LANGUAGES CXX)

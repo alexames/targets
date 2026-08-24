@@ -1027,9 +1027,10 @@ On MSVC, every rule that creates a compiled target - `cpp_library`, `cpp_binary`
 
 - **`/utf-8`** — always applied. Treats source and execution character sets as UTF-8.
 - **`/ZI`** (edit-and-continue debug info) — applied **only to Debug builds** (via a
-  `$<$<CONFIG:Debug>:...>` generator expression), **only on x86/x64**, and **only when no
-  compiler launcher is configured** (see below). It is never applied to Release (where it
-  de-optimizes the build) and is skipped on ARM/ARM64 (where it is invalid). Set
+  `$<$<CONFIG:Debug>:...>` generator expression), **only on x86/x64**, **only when no
+  compiler launcher is configured**, and **only on targets not compiled with whole-program
+  optimization** (both below). It is never applied to Release (where it de-optimizes the
+  build) and is skipped on ARM/ARM64 (where it is invalid). Set
   `-DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF` to suppress it entirely.
 - **`/SAFESEH:NO`** — applied **only to x86 (32-bit) executables and shared libraries**,
   where it has effect. It is a no-op on x64, invalid on ARM64, and ignored on static
@@ -1070,6 +1071,36 @@ Details worth knowing:
   compiler launchers altogether (Visual Studio, Xcode). Under those generators no cache runs,
   so the swap costs edit-and-continue and buys nothing; unset the launcher for those build
   trees.
+
+#### Debug builds with LTO
+
+A target carrying `INTERPROCEDURAL_OPTIMIZATION` — which the [`LTO`](#toolchain-hygiene-opt-in)
+knob sets, and which `CMAKE_INTERPROCEDURAL_OPTIMIZATION` sets for every target — does not get
+`/ZI`. `cl.exe` rejects `/GL` together with `/ZI` outright (`D8016`): `/GL` defers code
+generation to link time, so no machine code reaches the object file for an edit to be spliced
+into. Whole-program optimization is what the target asked for and `/ZI` arrives from a default,
+so the default yields. Debug keeps the `.pdb` debug info CMake gives it by default (`/Zi`),
+which `/GL` accepts.
+
+Details worth knowing:
+
+- **Only that target loses edit-and-continue.** `TARGETS_MSVC_EDIT_AND_CONTINUE` is untouched,
+  and every target without whole-program optimization still gets `/ZI`.
+- **The property is read per configuration, the way CMake reads it.**
+  `INTERPROCEDURAL_OPTIMIZATION_DEBUG` decides Debug wherever it has a value and
+  `INTERPROCEDURAL_OPTIMIZATION` answers when it does not, so a project that turns
+  whole-program optimization on globally and off for Debug keeps edit-and-continue there.
+  The test is a generator expression, so setting either property yourself, after the rule
+  created the target, is honored too.
+- **A compiler launcher configured as well changes nothing here.** Debug then gets the
+  launcher's embedded debug info and there is no `/ZI` to suppress, so the two land on one
+  debug format rather than two competing ones.
+- **A format you name for the whole build stays yours to reconcile.** Setting
+  `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT` to `EditAndContinue` puts `/ZI` on every target
+  through the property, which is not the injection described here and not one Targets
+  removes; on a target with whole-program optimization that is the `D8016` the compiler
+  reports.
+- **GCC and Clang are unaffected.** `-flto` conflicts with no debug format there.
 
 Non-MSVC toolchains (GCC, Clang, clang-cl) receive none of these flags. You can add or
 override any flag afterward with the standard `target_compile_options()` /
@@ -1113,7 +1144,9 @@ cpp_library(
   `/fsanitize=address`, so Debug is a no-op instead of a hard error.
 - **`LTO`** sets the `INTERPROCEDURAL_OPTIMIZATION` target property, gated on
   `check_ipo_supported()`, so it degrades to a warning instead of a hard error where the
-  toolchain cannot do it.
+  toolchain cannot do it. On MSVC it also costs the target edit-and-continue debug info in
+  Debug builds, which `/GL` cannot coexist with (see
+  [Debug builds with LTO](#debug-builds-with-lto)).
 - These are compile/link settings. A header-only library compiles the placeholder
   translation unit, so they reach it like they reach any other library.
 

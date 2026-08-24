@@ -48,6 +48,20 @@ jobs:
       - name: Build Examples
         run: cmake --build build --config Release
 
+      # Debug is the only configuration cpp_target injects edit-and-continue debug info into,
+      # so a Release build compiles none of it and a conflict between that flag and a target's
+      # own flags reaches a release unseen. The examples opt into the hygiene knobs, LTO among
+      # them, which makes them the ones to build. A separate build tree leaves the Release
+      # artifacts the steps below run intact; the configuration goes on the build line as well
+      # as the configure line, for the multi-config generators.
+      - name: Configure CMake (Debug)
+        env:
+          VCPKG_BINARY_SOURCES: clear
+        run: cmake -B build-debug -S . -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DTARGETS_BUILD_EXAMPLES=ON -DTARGETS_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build Examples (Debug)
+        run: cmake --build build-debug --config Debug
+
       - name: Test executable_with_deps example (Ubuntu/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -125,6 +139,8 @@ jobs:
           path: |
             build/**/*.log
             build/CMakeFiles/**/*.log
+            build-debug/**/*.log
+            build-debug/CMakeFiles/**/*.log
 
   consume-port:
     name: Consume in-repo vcpkg port on ${{ matrix.os }}

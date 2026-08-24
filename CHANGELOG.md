@@ -146,6 +146,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   creation sites call, and a new `common_target_defaults_coverage` test reads the shipped
   CMake sources and fails on any rule that creates a compiled target without calling it. A
   rule added later cannot silently miss them again ([#70]).
+- A target that opts into `LTO` now compiles in Debug on MSVC. `cl.exe` rejects `/GL`
+  together with the `/ZI` that `TARGETS_MSVC_EDIT_AND_CONTINUE` injects into Debug builds
+  (`D8016`): whole-program optimization defers code generation to link time, leaving nothing
+  in the object file for an edit to be spliced into. Of the two, whole-program optimization
+  is what the target asked for, so `/ZI` is no longer injected into a target carrying
+  `INTERPROCEDURAL_OPTIMIZATION`, read per configuration the way CMake reads it --
+  `INTERPROCEDURAL_OPTIMIZATION_DEBUG` wherever it has a value, the plain property otherwise.
+  Debug keeps the `.pdb` debug info CMake gives it by default,
+  `TARGETS_MSVC_EDIT_AND_CONTINUE` is unchanged, and every target without whole-program
+  optimization still gets edit-and-continue. The `Build Examples` CI job now builds the examples in Debug as well as
+  Release, which is where this went unseen ([#84]).
 
 ## [0.11.0] - 2026-08-23
 
@@ -305,6 +316,7 @@ suite up to full coverage across Linux, macOS, and Windows.
 [#70]: https://github.com/alexames/targets/issues/70
 [#79]: https://github.com/alexames/targets/issues/79
 [#82]: https://github.com/alexames/targets/issues/82
+[#84]: https://github.com/alexames/targets/issues/84
 [Composer#1353]: https://github.com/alexames/Composer/issues/1353
 [Composer#1354]: https://github.com/alexames/Composer/issues/1354
 [Composer#1355]: https://github.com/alexames/Composer/issues/1355

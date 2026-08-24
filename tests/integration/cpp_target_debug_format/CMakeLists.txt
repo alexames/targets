@@ -8,6 +8,10 @@
 #
 # On a non-MSVC toolchain the whole MSVC block is skipped, and every scenario asserts that
 # none of these flags leaked there.
+#
+# The scenarios whose name carries "lto" add a second library that opts into LTO, because
+# /GL and /ZI cannot appear on one compile line: they pin which of the two stands down, and
+# that a cache configured on top of LTO still leaves one debug format in force.
 
 cmake_minimum_required(VERSION 3.20)
 
@@ -28,6 +32,9 @@ set(known_scenarios
   launcher_flags_stripped
   launcher_user_format
   launcher_edit_and_continue_off
+  launcher_lto
+  launcher_lto_property
+  lto
   no_launcher)
 if(NOT "${SCENARIO}" IN_LIST known_scenarios)
   message(FATAL_ERROR "test harness: unknown or unset SCENARIO '${SCENARIO}'")
@@ -77,6 +84,34 @@ message(STATUS "DebugFormatLib COMPILE_OPTIONS: ${options}")
 message(STATUS "DebugFormatLib MSVC_DEBUG_INFORMATION_FORMAT: ${format}")
 message(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG}")
 
+# The LTO scenarios put an opted-in library beside the plain one above: edit-and-continue
+# has to stand down on the target carrying /GL and stay on its neighbour.
+if(SCENARIO MATCHES "lto")
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ipo_supported OUTPUT ipo_unsupported_reason LANGUAGES CXX)
+  cpp_library(
+    TARGET DebugFormatLtoLib
+    SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}"
+    SOURCES "${source}"
+    LTO
+  )
+  get_target_property(lto_options DebugFormatLtoLib COMPILE_OPTIONS)
+  if(NOT lto_options)
+    set(lto_options "")
+  endif()
+  get_target_property(lto_format DebugFormatLtoLib MSVC_DEBUG_INFORMATION_FORMAT)
+  if(NOT lto_format)
+    set(lto_format "")
+  endif()
+  get_target_property(lto_ipo DebugFormatLtoLib INTERPROCEDURAL_OPTIMIZATION)
+  if(NOT lto_ipo)
+    set(lto_ipo "")
+  endif()
+  message(STATUS "DebugFormatLtoLib COMPILE_OPTIONS: ${lto_options}")
+  message(STATUS "DebugFormatLtoLib MSVC_DEBUG_INFORMATION_FORMAT: ${lto_format}")
+  message(STATUS "DebugFormatLtoLib INTERPROCEDURAL_OPTIMIZATION: ${lto_ipo}")
+endif()
+
 # Assert that nothing asks for edit-and-continue, in any of its spellings: a bare /ZI, a
 # Debug-gated one, or the property's EditAndContinue. CONTEXT names the scenario in the
 # diagnostic, OPTIONS and FORMAT are the target's inspected values.
@@ -88,6 +123,31 @@ function(assert_no_edit_and_continue CONTEXT OPTIONS FORMAT)
   endif()
 endfunction()
 
+# The single form in which cpp_target may ask for edit-and-continue: Debug, and only where
+# the target is not compiled with whole-program optimization, read the way CMake reads it --
+# the per-config property wherever it has a value, the plain one otherwise. cl.exe rejects
+# /ZI together with /GL (D8016), so any other entry naming /ZI is one a target with
+# interprocedural optimization could still be handed.
+set(per_config "$<TARGET_PROPERTY:INTERPROCEDURAL_OPTIMIZATION_DEBUG>")
+string(CONCAT whole_program
+  "$<IF:$<STREQUAL:${per_config},>,"
+  "$<BOOL:$<TARGET_PROPERTY:INTERPROCEDURAL_OPTIMIZATION>>,"
+  "$<BOOL:${per_config}>>")
+set(guarded_edit_and_continue "$<$<AND:$<CONFIG:Debug>,$<NOT:${whole_program}>>:/ZI>")
+
+# Assert that every edit-and-continue entry a target carries is EXPECTED, the guarded form.
+# CONTEXT names the scenario and TARGET_NAME the inspected target for the diagnostic;
+# OPTIONS is that target's COMPILE_OPTIONS.
+function(assert_edit_and_continue_is_guarded CONTEXT TARGET_NAME OPTIONS EXPECTED)
+  foreach(entry IN LISTS OPTIONS)
+    if(entry MATCHES "/ZI" AND NOT entry STREQUAL "${EXPECTED}")
+      message(FATAL_ERROR
+        "${CONTEXT}: ${TARGET_NAME} carries an edit-and-continue entry that whole-program "
+        "optimization cannot switch off: '${entry}'")
+    endif()
+  endforeach()
+endfunction()
+
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
   # None of these settings may reach a toolchain other than MSVC, whatever the scenario.
   # CMake initializes the property from CMAKE_MSVC_DEBUG_INFORMATION_FORMAT on every
@@ -97,6 +157,22 @@ if(NOT CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     message(FATAL_ERROR
       "MSVC-only debug-format settings leaked to ${CMAKE_CXX_COMPILER_ID}: "
       "options=${options} format=${format}")
+  endif()
+
+  # GCC and Clang spell interprocedural optimization -flto, which conflicts with no debug
+  # format, so an LTO target there differs from any other only in the property.
+  if(SCENARIO MATCHES "lto")
+    if(lto_options MATCHES "/ZI" OR lto_options MATCHES "/Z7"
+       OR NOT lto_format STREQUAL "${CMAKE_MSVC_DEBUG_INFORMATION_FORMAT}")
+      message(FATAL_ERROR
+        "MSVC-only debug-format settings leaked to ${CMAKE_CXX_COMPILER_ID} on the LTO "
+        "target: options=${lto_options} format=${lto_format}")
+    endif()
+    if(ipo_supported AND NOT lto_ipo)
+      message(FATAL_ERROR
+        "LTO left INTERPROCEDURAL_OPTIMIZATION unset on ${CMAKE_CXX_COMPILER_ID}, which "
+        "reports interprocedural optimization as supported")
+    endif()
   endif()
 
 elseif(SCENARIO STREQUAL "launcher_property")
@@ -179,13 +255,75 @@ elseif(SCENARIO STREQUAL "no_launcher")
   endif()
   if(TARGETS_MSVC_EDIT_AND_CONTINUE
      AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
-    if(NOT "$<$<CONFIG:Debug>:/ZI>" IN_LIST options)
+    if(NOT "${guarded_edit_and_continue}" IN_LIST options)
       message(FATAL_ERROR
-        "no_launcher: expected the Debug-gated /ZI generator expression in COMPILE_OPTIONS: "
+        "no_launcher: expected the guarded /ZI generator expression in COMPILE_OPTIONS: "
         "${options}")
     endif()
   elseif(options MATCHES "/ZI")
     message(FATAL_ERROR
       "no_launcher: /ZI present despite opt-out or non-x86/x64 arch: ${options}")
+  endif()
+
+elseif(SCENARIO STREQUAL "lto")
+  # Two facts together put /ZI out of the LTO target's reach: the only entry that asks for it
+  # stands down where interprocedural optimization is on, and the LTO keyword turns that
+  # property on. The plain library beside it keeps edit-and-continue, so what stands down is
+  # the target's own flag rather than the whole project's.
+  assert_edit_and_continue_is_guarded(
+    "lto" DebugFormatLtoLib "${lto_options}" "${guarded_edit_and_continue}")
+  assert_edit_and_continue_is_guarded(
+    "lto" DebugFormatLib "${options}" "${guarded_edit_and_continue}")
+  if(ipo_supported AND NOT lto_ipo)
+    message(FATAL_ERROR
+      "lto: interprocedural optimization is supported here, but DebugFormatLtoLib does not "
+      "carry INTERPROCEDURAL_OPTIMIZATION, so nothing switches /ZI off on it")
+  endif()
+  if(TARGETS_MSVC_EDIT_AND_CONTINUE
+     AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
+    if(NOT "${guarded_edit_and_continue}" IN_LIST options)
+      message(FATAL_ERROR
+        "lto: the library without LTO lost edit-and-continue too: ${options}")
+    endif()
+  endif()
+  # Debug keeps the .pdb debug info CMake gives it by default, which /GL accepts: with no
+  # cache to serve, nothing here claims the debug format.
+  if(NOT lto_format STREQUAL "")
+    message(FATAL_ERROR
+      "lto: MSVC_DEBUG_INFORMATION_FORMAT was set to '${lto_format}' with no compiler "
+      "launcher configured")
+  endif()
+  if(lto_options MATCHES "/Z7")
+    message(FATAL_ERROR
+      "lto: /Z7 injected with no compiler launcher configured: ${lto_options}")
+  endif()
+
+elseif(SCENARIO MATCHES "^launcher_lto")
+  # A compile cache and LTO on one target resolve to a single answer: the launcher moves
+  # Debug to the format a cache can serve, and edit-and-continue is absent for both reasons
+  # at once, with no second override layered on top.
+  assert_no_edit_and_continue("${SCENARIO}" "${lto_options}" "${lto_format}")
+  assert_no_edit_and_continue("${SCENARIO}" "${options}" "${format}")
+  if(ipo_supported AND NOT lto_ipo)
+    message(FATAL_ERROR
+      "${SCENARIO}: interprocedural optimization is supported here, but DebugFormatLtoLib "
+      "does not carry INTERPROCEDURAL_OPTIMIZATION")
+  endif()
+  if(SCENARIO STREQUAL "launcher_lto_property")
+    if(NOT lto_format MATCHES "Embedded")
+      message(FATAL_ERROR
+        "launcher_lto_property: expected Embedded debug info on the LTO target under a "
+        "compiler launcher, MSVC_DEBUG_INFORMATION_FORMAT is '${lto_format}'")
+    endif()
+    if(lto_options MATCHES "/Z7")
+      message(FATAL_ERROR
+        "launcher_lto_property: /Z7 appended on top of the property that already names the "
+        "format: ${lto_options}")
+    endif()
+  else()
+    if(NOT "$<$<CONFIG:Debug>:/Z7>" IN_LIST lto_options)
+      message(FATAL_ERROR
+        "launcher_lto: expected a Debug-gated /Z7 on the LTO target: ${lto_options}")
+    endif()
   endif()
 endif()

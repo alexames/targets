@@ -11,8 +11,10 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # /ZI is a developer convenience that only applies to x86/x64 and must never reach
 # Release, where it de-optimizes the build (see issue #5). It is gated to Debug via a
 # generator expression and skipped entirely on ARM/ARM64. Set this to OFF to suppress
-# /ZI in every configuration. A configured compiler launcher takes the decision out of this
-# option's hands either way: Debug then gets the debug format a compile cache can serve.
+# /ZI in every configuration. Two situations take the decision out of this option's hands:
+# a configured compiler launcher, where Debug gets the debug format a compile cache can
+# serve, and a target compiled with whole-program optimization, which /ZI cannot coexist
+# with.
 option(TARGETS_MSVC_EDIT_AND_CONTINUE
   "Inject MSVC /ZI (edit-and-continue debug info) into Debug builds on x86/x64" ON)
 
@@ -525,11 +527,27 @@ function(_targets_apply_common_target_defaults TARGET)
     # entirely with -DTARGETS_MSVC_EDIT_AND_CONTINUE=OFF. A configured compiler launcher
     # outranks the option, whose ON cannot be told apart from its default anyway: /ZI is
     # what keeps a Debug translation unit out of a compile cache.
+    #
+    # A target compiled with whole-program optimization also never gets it: cl.exe rejects
+    # /GL with /ZI (D8016), because /GL defers code generation to link time and leaves no
+    # machine code in the object file for an edit to be spliced into. Whole-program
+    # optimization is what the target asked for and /ZI arrives from a default, so the
+    # default yields; Debug keeps the .pdb debug info CMake gives it by default (/Zi), which
+    # /GL accepts. The test is a generator expression rather than an if() because the
+    # property carrying /GL is set after this runs -- by cpp_target's LTO keyword, or by the
+    # caller. It reads that property the way CMake does: INTERPROCEDURAL_OPTIMIZATION_DEBUG
+    # decides Debug wherever it has a value, and the plain property answers when it does not.
     if(CMAKE_CXX_COMPILER_LAUNCHER)
       _targets_msvc_cacheable_debug_info(${TARGET})
     elseif(TARGETS_MSVC_EDIT_AND_CONTINUE
            AND NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM|ARM64|ARM64EC)$")
-      target_compile_options(${TARGET} PRIVATE "$<$<CONFIG:Debug>:/ZI>")
+      set(per_config "$<TARGET_PROPERTY:INTERPROCEDURAL_OPTIMIZATION_DEBUG>")
+      string(CONCAT whole_program
+        "$<IF:$<STREQUAL:${per_config},>,"
+        "$<BOOL:$<TARGET_PROPERTY:INTERPROCEDURAL_OPTIMIZATION>>,"
+        "$<BOOL:${per_config}>>")
+      target_compile_options(${TARGET} PRIVATE
+        "$<$<AND:$<CONFIG:Debug>,$<NOT:${whole_program}>>:/ZI>")
     endif()
 
     # /SAFESEH:NO only affects the x86 (32-bit) linker: it is a silent no-op on x64,
