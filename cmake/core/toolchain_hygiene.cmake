@@ -1,5 +1,4 @@
-# toolchain_hygiene.cmake
-# Opt-in, per-target toolchain hygiene knobs for cpp_target (issue #23): warning level,
+# Opt-in, per-target toolchain hygiene knobs for cpp_target: warning level,
 # warnings-as-errors, sanitizers, and link-time optimization.
 #
 # Everything here is OFF by default. A target gets these flags only when it explicitly opts
@@ -44,6 +43,9 @@ endfunction()
 #   WERROR                            treat warnings as errors
 #   SANITIZERS <name>...              e.g. address undefined thread
 #   LTO                               enable interprocedural optimization when supported
+#
+# The caller validates WARNINGS; an unsupported sanitizer and an unsupported LTO toolchain
+# each produce a WARNING and are skipped, so no knob turns an opt-in into a failed configure.
 function(_targets_apply_toolchain_hygiene)
   set(options WERROR LTO)
   set(one_value_args TARGET WARNINGS)

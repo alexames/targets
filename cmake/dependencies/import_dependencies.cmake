@@ -1,9 +1,8 @@
-# import_dependencies.cmake
-# Smart dependency importing with automatic subdirectory discovery and circular dependency detection
+# Resolve a namespaced dependency label to the subdirectory that declares it, and
+# add_subdirectory() that directory on demand, with circular-import detection.
 
 include_guard(GLOBAL)
 
-# Global properties for tracking imported directories
 define_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_STACK
   BRIEF_DOCS "Stack of currently importing subdirectories for circular dependency detection"
   FULL_DOCS "Maintains a stack of subdirectories currently being imported to detect circular dependencies"
@@ -16,14 +15,15 @@ define_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_LIST
 )
 set_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_LIST "")
 
-# Resolve the per-project roots that map a namespaced label to a subdirectory. These are
-# deliberately recomputed on every call rather than frozen once: the previous code cached
-# them as CACHE PATH at module-include time, so they froze to the *first* project that
-# configured. In a multi-project tree (a Targets project embedded via
-# add_subdirectory/FetchContent) every later project then resolved its own imports against
-# the first project's Source tree, so even a namespace match looked in the wrong place (see
-# issue #8). An explicit TARGETS_SOURCE_DIR / TARGETS_BINARY_DIR set by the consumer still
-# wins; otherwise each defaults to the *enclosing* project's Source directory.
+# Report in out_var the root that maps a namespaced label to a subdirectory: the source tree
+# for _targets_source_root, the matching binary tree for _targets_binary_root.
+#
+# Both are recomputed on every call rather than cached, so each project in a multi-project
+# tree resolves its imports against its OWN Source directory -- a value frozen at
+# module-include time would be the first project's, and a Targets project embedded via
+# add_subdirectory/FetchContent would then look for its subdirectories in the wrong tree.
+# An explicit TARGETS_SOURCE_DIR / TARGETS_BINARY_DIR set by the consumer still wins;
+# otherwise each derives from the *enclosing* project.
 function(_targets_source_root out_var)
   if(TARGETS_SOURCE_DIR)
     set(${out_var} "${TARGETS_SOURCE_DIR}" PARENT_SCOPE)
@@ -40,27 +40,30 @@ function(_targets_binary_root out_var)
   endif()
 endfunction()
 
-# Internal implementation with circular dependency detection
+# add_subdirectory() the source root's SUBDIRECTORY, once per configure. TARGET names the
+# target whose dependency triggered the import, for diagnostics.
+#
+# A directory already on the import stack means a cycle, and is a FATAL_ERROR that prints the
+# chain. A directory that is merely already imported is skipped. A self-reference -- the
+# subdirectory currently on top of the stack, which is how two targets in one CMakeLists reach
+# each other -- is neither.
+#
+# FATAL_ERROR when the resolved directory does not exist; a directory with no CMakeLists.txt
+# is a WARNING and imports nothing.
 function(_targets_import_subdirectory_real target subdirectory)
-  # Get stack of visited directories
   get_property(imported_stack GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_STACK)
 
-  # Get last item (top of stack)
   list(LENGTH imported_stack imported_stack_length)
   set(top "")
   if(imported_stack_length)
     list(GET imported_stack -1 top)
   endif()
 
-  # Check for circular dependencies
-  # Allow same-file references (targets in same CMakeLists.txt)
   if("${subdirectory}" STREQUAL "${top}")
-    # Skip check - same file reference is allowed
+    # A target naming a sibling declared in the same CMakeLists is not a cycle.
   else()
-    # Check if the requested subdirectory is already in the import stack
     list(FIND imported_stack "${subdirectory}" index)
     if(NOT index EQUAL -1)
-      # Circular dependency detected! Print error and halt
       message(STATUS "========================================")
       message(STATUS "Circular dependency detected!")
       message(STATUS "========================================")
@@ -81,83 +84,79 @@ function(_targets_import_subdirectory_real target subdirectory)
       return()
     endif()
 
-    # Not circular - add to stack
     list(APPEND imported_stack "${subdirectory}")
     set_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_STACK ${imported_stack})
   endif()
 
-  # Check if already imported
   get_property(imported_list GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_LIST)
   list(FIND imported_list "${subdirectory}" index)
 
   if(index EQUAL -1)
-    # Not yet imported - add to list
     list(APPEND imported_list "${subdirectory}")
     set_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_LIST "${imported_list}")
 
-    # Construct full path against the enclosing project's roots (see issue #8).
     _targets_source_root(source_root)
     _targets_binary_root(binary_root)
     set(source_dir "${source_root}/${subdirectory}")
     set(binary_dir "${binary_root}/${subdirectory}")
 
-    # Validate directory exists
     if(NOT EXISTS "${source_dir}")
       message(FATAL_ERROR "Targets: import_subdirectory: Target ${target}: Directory does not exist: ${source_dir}")
       return()
     endif()
 
-    # Validate CMakeLists.txt exists
     if(NOT EXISTS "${source_dir}/CMakeLists.txt")
       message(WARNING "Targets: import_subdirectory: Target ${target}: No CMakeLists.txt in ${source_dir}")
       return()
     endif()
 
-    # Import the subdirectory
     add_subdirectory("${source_dir}" "${binary_dir}")
   endif()
 
-  # Pop from stack (unless it's a same-file reference)
   if(NOT "${subdirectory}" STREQUAL "${top}")
     list(REMOVE_ITEM imported_stack "${subdirectory}")
     set_property(GLOBAL PROPERTY TARGETS_IMPORTED_SUBDIRECTORY_STACK ${imported_stack})
   endif()
 endfunction()
 
-# Public API: Import a single subdirectory
+# Import one subdirectory of the enclosing project's source root, given relative to it.
+#
+# Imports at most once per configure however many times it is called, and is a FATAL_ERROR on
+# a directory that does not exist or that a cycle leads back to.
 function(import_subdirectory subdirectory)
   _targets_import_subdirectory_real("<root>" "${subdirectory}")
 endfunction()
 
-# Public API: Automatically import dependencies based on namespace
+# Import the subdirectories that declare TARGET's namespaced dependencies, so a target can be
+# named before the CMakeLists that creates it has been processed. DEPENDENCIES is one
+# semicolon-separated list of labels, quoted at the call site.
+#
+# A label already resolving to a target is left alone. Otherwise its leading namespace must be
+# the *enclosing* project (PROJECT_NAME) rather than the top-level one (CMAKE_PROJECT_NAME),
+# which is what lets an embedded subproject's own labels ("SubProj::Core::Lib") match; the
+# remaining namespace components are the path under the source root. A label rooted at
+# anything else is left for CMake to resolve, since it names a target this project does not
+# own.
+#
+# FATAL_ERROR when a matching label's subdirectory is imported and the target still does not
+# exist.
 function(import_dependencies target dependencies)
   foreach(dependency ${dependencies})
-    # Only process if not already a target
     if(NOT TARGET ${dependency})
-      # Parse namespace (e.g., "MyProject::Core::Math" -> ["MyProject", "Core", "Math"])
+      # "MyProject::Core::Math" -> ["MyProject", "Core", "Math"], of which the middle
+      # components are the path and the last is the target name.
       string(REPLACE "::" ";" namespace_list "${dependency}")
 
-      # Get root namespace
       list(GET namespace_list 0 root)
 
-      # Only auto-import labels rooted at the *enclosing* project (PROJECT_NAME), not the
-      # top-level project (CMAKE_PROJECT_NAME). When embedded, a subproject's own deps
-      # (e.g. "SubProj::Core::Lib") never matched the top-level name, so they were silently
-      # skipped and later surfaced as a generic "target not found" (see issue #8).
       if(root STREQUAL "${PROJECT_NAME}")
-        # Remove project name from front
         list(POP_FRONT namespace_list)
-
-        # Remove target name from end
         list(POP_BACK namespace_list)
 
-        # Convert remaining namespace to directory path
         string(REPLACE ";" "/" relative_dir "${namespace_list}")
 
-        # Import the subdirectory
         _targets_import_subdirectory_real("${target}" "${relative_dir}")
 
-        # Verify the target now exists
         if(NOT TARGET ${dependency})
           message(FATAL_ERROR "Targets: import_dependencies: Target ${target}: Failed to import ${dependency} from ${relative_dir}")
         endif()
@@ -166,25 +165,26 @@ function(import_dependencies target dependencies)
   endforeach()
 endfunction()
 
-# Public API: Recursively import all CMakeLists.txt files in a directory tree
+# Import every subdirectory of DIR that holds a CMakeLists.txt, recursively. DIR is absolute;
+# each directory found is imported relative to the enclosing project's source root, so DIR
+# must lie under it.
+#
+# The build directory is skipped. Directories are visited in glob order, so a project whose
+# targets depend on each other relies on import_dependencies() rather than on this ordering.
 function(import_all dir)
-  # Get all children in directory
   file(GLOB children RELATIVE "${dir}" "${dir}/*")
 
   foreach(child IN LISTS children)
     set(child_path "${dir}/${child}")
 
-    # Process if it's a directory (and not the build directory)
     if(IS_DIRECTORY "${child_path}")
       if(NOT "${child_path}" STREQUAL "${CMAKE_BINARY_DIR}")
-        # If it has a CMakeLists.txt, import it
         if(EXISTS "${child_path}/CMakeLists.txt")
           _targets_source_root(source_root)
           file(RELATIVE_PATH relative_child_path "${source_root}" "${child_path}")
           import_subdirectory("${relative_child_path}")
         endif()
 
-        # Recurse into subdirectories
         import_all("${child_path}")
       endif()
     endif()

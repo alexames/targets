@@ -1,5 +1,4 @@
-# install_export.cmake
-# Install/export support for cpp_target-created targets (issue #20).
+# Install/export support for cpp_target-created targets.
 #
 # By default a cpp_library target is a build-tree-only artifact: its public include
 # directories are plain source paths (implicitly BUILD_INTERFACE) and no install/export

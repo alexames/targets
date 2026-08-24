@@ -1,7 +1,6 @@
-# platform_parser.cmake
-# Helpers for filtering argument lists by build platform.
-# Used by cpp_target to support platform-conditional SOURCES, HEADERS,
-# INCLUDES, DEFINITIONS, and DEPENDENCIES.
+# Helpers for filtering argument lists by build platform. Used by cpp_target to support
+# platform-conditional SOURCES, HEADERS, INCLUDES, DEFINITIONS, DEPENDENCIES, COPTS, LINKOPTS
+# and DATA.
 
 include_guard(GLOBAL)
 
@@ -32,7 +31,7 @@ set(_TARGETS_PLATFORM_KEYWORDS WINDOWS LINUX MACOS ANDROID EMSCRIPTEN DEFAULT)
 # The marker escapes itself too: `LITERAL LITERAL` emits a literal `LITERAL`.
 set(_TARGETS_PLATFORM_ESCAPE LITERAL)
 
-# Filter a token list by platform. Pure function — takes the platform
+# Filter a token list by platform. Pure function -- takes the platform
 # explicitly so it can be unit-tested for any target platform from any host.
 #
 # Token rules:

@@ -1,5 +1,4 @@
-# embed_binary.cmake
-# Embed binary files as C++ code in a static library
+# embed_binary(): turn binary files into a static library of C++ byte arrays.
 
 include_guard(GLOBAL)
 
@@ -8,20 +7,31 @@ get_filename_component(_TARGETS_UTILS_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 get_filename_component(_TARGETS_ROOT_DIR "${_TARGETS_UTILS_DIR}" PATH)
 include("${_TARGETS_ROOT_DIR}/core/cpp_target.cmake")
 
-# Embed binary files as C++ code
+# Create a static library holding the contents of binary files as C++ byte arrays.
 #
-# Creates a static library containing embedded binary data accessible from C++.
-# This is useful for embedding assets, configuration files, etc. directly into executables.
+# Each file yields a <identifier>.h / <identifier>.cpp pair declaring
+# `extern const unsigned char <identifier>_data[]` and `extern const std::size_t
+# <identifier>_size`, where the identifier is the file's name with every character C does not
+# accept replaced. The generated directory is on the library's PUBLIC include path, so a
+# consumer links the target and includes "<identifier>.h". Two files whose names produce the
+# same identifier overwrite each other's generated sources.
 #
 # Arguments:
-#   TARGET: Name of the library target to create (required)
-#   FILES: List of binary files to embed (required)
-#   NAMESPACE: C++ namespace for the embedded data (optional)
-#   OUTPUT_DIR: Directory for generated source files (default: a per-target subdirectory
-#               of CMAKE_CURRENT_BINARY_DIR, i.e. _embed_binary/<target>)
+#   TARGET: Name of the library target to create (required).
+#   FILES: The files to embed (required). A relative entry resolves against
+#          CMAKE_CURRENT_SOURCE_DIR; each must exist at configure time.
+#   NAMESPACE: C++ namespace the declarations go in (default: `embedded`). A `::` in it is
+#              also folded into the header guard, with `_` in place of the separator.
+#   OUTPUT_DIR: Directory the generated sources are written to (default:
+#               CMAKE_CURRENT_BINARY_DIR/_embed_binary/<target>).
 #
-# Note: This is a simplified implementation. For production use, consider using
-# CMakeRC (https://github.com/vector-of-bool/cmrc) or a similar solution.
+# The files are READ AT CONFIGURE TIME and their bytes written into the generated sources, so
+# a changed input is not picked up until the next configure -- unlike a codegen rule driven by
+# a custom command. Embedding is byte-for-byte, so the generated source is roughly six times
+# the size of the input.
+#
+# FATAL_ERROR when TARGET or FILES is missing, an argument is unrecognized, or a named file
+# does not exist.
 #
 # Example:
 #   embed_binary(
@@ -47,13 +57,11 @@ function(embed_binary)
     "${one_value_args}"
     "${multi_value_args}")
 
-  # Reject typo'd or misplaced arguments instead of silently ignoring them.
   _targets_check_args("embed_binary"
     "${args_UNPARSED_ARGUMENTS}"
     "${args_KEYWORDS_MISSING_VALUES}"
     ${options} ${one_value_args} ${multi_value_args})
 
-  # Validate required arguments
   if(NOT args_TARGET)
     message(FATAL_ERROR "embed_binary: TARGET argument is required")
   endif()
@@ -62,7 +70,6 @@ function(embed_binary)
     message(FATAL_ERROR "embed_binary: FILES argument is required")
   endif()
 
-  # Set defaults
   if(NOT args_OUTPUT_DIR)
     set(args_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/_embed_binary/${args_TARGET}")
   endif()
@@ -71,44 +78,37 @@ function(embed_binary)
     set(args_NAMESPACE "embedded")
   endif()
 
-  # Convert namespace "::" to "_" for C identifiers
+  # The namespace reaches the header guard, where "::" is not spellable.
   string(REPLACE "::" "_" namespace_prefix "${args_NAMESPACE}")
 
-  # Create output directory
   file(MAKE_DIRECTORY "${args_OUTPUT_DIR}")
 
-  # Generate source files for each embedded file
   unset(generated_sources)
   unset(generated_headers)
 
   foreach(file_path ${args_FILES})
-    # Make path absolute
     cmake_path(IS_ABSOLUTE file_path is_absolute)
     if(NOT is_absolute)
       set(file_path "${CMAKE_CURRENT_SOURCE_DIR}/${file_path}")
     endif()
 
-    # Validate file exists
     if(NOT EXISTS "${file_path}")
       message(FATAL_ERROR "embed_binary: File does not exist: ${file_path}")
     endif()
 
-    # Get filename for variable name
     get_filename_component(filename "${file_path}" NAME)
     string(MAKE_C_IDENTIFIER "${filename}" var_name)
 
-    # Output file paths
     set(output_header "${args_OUTPUT_DIR}/${var_name}.h")
     set(output_source "${args_OUTPUT_DIR}/${var_name}.cpp")
 
-    # Read file as hex
+    # HEX is the only encoding file(READ) offers that survives arbitrary bytes; the loop below
+    # turns it back into one 0x.. literal per byte, wrapped every 16 for readability.
     file(READ "${file_path}" file_contents HEX)
 
-    # Convert hex to C++ array initializer
     string(LENGTH "${file_contents}" hex_length)
     math(EXPR data_length "${hex_length} / 2")
 
-    # Format as comma-separated hex bytes
     set(array_data "")
     string(REGEX MATCHALL ".." hex_bytes "${file_contents}")
     list(LENGTH hex_bytes num_bytes)
@@ -127,7 +127,6 @@ function(embed_binary)
       math(EXPR counter "${counter} + 1")
     endforeach()
 
-    # Generate header file
     file(WRITE "${output_header}"
 "// Auto-generated by embed_binary
 // Source file: ${filename}
@@ -147,7 +146,6 @@ extern const std::size_t ${var_name}_size;
 #endif // ${namespace_prefix}_${var_name}_H
 ")
 
-    # Generate source file
     file(WRITE "${output_source}"
 "// Auto-generated by embed_binary
 // Source file: ${filename}
@@ -169,7 +167,6 @@ const std::size_t ${var_name}_size = ${data_length};
     list(APPEND generated_headers "${output_header}")
   endforeach()
 
-  # Create library target
   add_library(${args_TARGET} STATIC
     ${generated_sources}
     ${generated_headers}
@@ -177,13 +174,11 @@ const std::size_t ${var_name}_size = ${data_length};
 
   _targets_apply_common_target_defaults(${args_TARGET})
 
-  # Add include directory
   target_include_directories(${args_TARGET}
     PUBLIC
       "$<BUILD_INTERFACE:${args_OUTPUT_DIR}>"
   )
 
-  # Organize in IDE
   source_group("Generated Files" FILES ${generated_sources} ${generated_headers})
 
   list(LENGTH args_FILES num_files)

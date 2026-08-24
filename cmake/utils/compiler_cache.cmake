@@ -1,5 +1,4 @@
-# compiler_cache.cmake
-# Route C and C++ compiles through a compiler cache (ccache/sccache)
+# targets_enable_compiler_cache(): route C and C++ compiles through ccache or sccache.
 
 include_guard(GLOBAL)
 
@@ -72,7 +71,6 @@ function(targets_enable_compiler_cache)
     "${one_value_args}"
     "${multi_value_args}")
 
-  # Reject typo'd or misplaced arguments instead of silently ignoring them.
   _targets_check_args("targets_enable_compiler_cache"
     "${args_UNPARSED_ARGUMENTS}"
     "${args_KEYWORDS_MISSING_VALUES}"
