@@ -230,8 +230,8 @@ default.
 
 ## Requirements
 
-- **CMake 3.20 or later**, which a CI job configures at exactly to keep the number honest.
-  Every feature the rules use above that floor is version-guarded and degrades:
+- **CMake 3.20 or later.** A CI job configures at exactly that version, so the number stays
+  honest. Every feature the rules use above the floor is version-guarded and degrades:
   `$<TARGET_RUNTIME_DLLS>` DLL staging needs 3.21, the `GLOBAL` promotion of an imported
   Google Test needs 3.24, `MSVC_DEBUG_INFORMATION_FORMAT` under `CMP0141 NEW` needs 3.25
   (below it a `/Z7` is appended to the flags instead), and `EXCLUDE_FROM_ALL` on a fetched
@@ -240,8 +240,8 @@ default.
   than this project's: 3.20 offers only `Visual Studio 16 2019`. Ninja and the Makefile
   generators drive a VS 2022 toolchain from 3.20 — and are the only generators that run a
   compiler launcher, so they are what a compile cache wants anyway.
-- **Linux, macOS, and Windows**, each exercised by CI on every push: the examples are built
-  and run, the full test suite runs, the library is installed and consumed through
+- **Linux, macOS, and Windows**, each exercised by CI on every pull request: the examples are
+  built and run, the full test suite runs, the library is installed and consumed through
   `find_package`, and the vcpkg port is installed and consumed.
 - A C++ compiler. Targets default to **C++23**; pass `CXX_STANDARD <n>` to any rule to
   select another standard per target.
